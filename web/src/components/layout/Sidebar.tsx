@@ -130,29 +130,15 @@ export function Sidebar() {
 
         {/* Main navigation */}
         <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-4">
-          {mainNavItems.map((item, index) => (
-            <motion.div
-              key={item.href}
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: index * 0.03, duration: 0.25 }}
-            >
-              <NavLink item={item} onNavigate={closeMobile} />
-            </motion.div>
+          {mainNavItems.map((item) => (
+            <NavLink key={item.href} item={item} onNavigate={closeMobile} />
           ))}
         </nav>
 
         {/* Bottom navigation */}
         <div className="border-t border-slate-800 px-3 py-3">
-          {bottomNavItems.map((item, index) => (
-            <motion.div
-              key={item.href}
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: (mainNavItems.length + index) * 0.03, duration: 0.25 }}
-            >
-              <NavLink item={item} onNavigate={closeMobile} />
-            </motion.div>
+          {bottomNavItems.map((item) => (
+            <NavLink key={item.href} item={item} onNavigate={closeMobile} />
           ))}
         </div>
       </aside>
