@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Layout } from '../components/layout/Layout';
+
 import { Puzzle, Plus, Trash2, Sparkles } from 'lucide-react';
 
 const widgetContainerVariants = {
@@ -79,7 +79,7 @@ export default function WidgetsPage() {
   };
 
   return (
-    <Layout pageTitle="Widgets">
+    <>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -192,6 +192,6 @@ export default function WidgetsPage() {
           </motion.div>
         )}
       </div>
-    </Layout>
+    </>
   );
 }

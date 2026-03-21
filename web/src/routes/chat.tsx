@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { Layout } from '../components/layout/Layout';
+
 import { MessageList } from '../components/chat/MessageList';
 import { ChatInput } from '../components/chat/ChatInput';
 
@@ -104,7 +104,7 @@ export default function ChatPage() {
   };
 
   return (
-    <Layout pageTitle="Chat">
+    <>
       <div className="flex flex-col h-[calc(100vh-8rem)]">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -156,6 +156,6 @@ export default function ChatPage() {
           <ChatInput onSend={handleSend} disabled={sending} />
         </div>
       </div>
-    </Layout>
+    </>
   );
 }

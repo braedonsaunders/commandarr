@@ -1,5 +1,8 @@
 import { useState, useEffect, useMemo, createContext, useContext, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Sidebar } from './components/layout/Sidebar';
+import { Header } from './components/layout/Header';
 
 // ─── Router context ──────────────────────────────────────────────────
 
@@ -26,9 +29,24 @@ import LLMSettingsPage from './routes/settings/llm';
 import GeneralSettingsPage from './routes/settings/general';
 import LogsPage from './routes/logs';
 
+// ─── Page title map ────────────────────────────────────────────────
+
+function getPageTitle(path: string): string {
+  if (path === '/' || path === '') return 'Dashboard';
+  if (path === '/chat') return 'Chat';
+  if (path === '/integrations') return 'Integrations';
+  if (path.startsWith('/integrations/')) return 'Integration';
+  if (path === '/automations') return 'Automations';
+  if (path === '/widgets') return 'Widgets';
+  if (path === '/settings/llm') return 'LLM Settings';
+  if (path === '/settings/general' || path === '/settings') return 'Settings';
+  if (path === '/logs') return 'Logs';
+  return 'Dashboard';
+}
+
 // ─── Router component ───────────────────────────────────────────────
 
-function PageRouter({ path }: { path: string }) {
+function PageContent({ path }: { path: string }) {
   if (path === '/' || path === '') return <DashboardPage />;
   if (path === '/chat') return <ChatPage />;
   if (path === '/integrations') return <IntegrationsPage />;
@@ -89,7 +107,24 @@ export function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <RouterContext.Provider value={{ path, navigate }}>
-        <PageRouter path={path} />
+        <div className="flex h-screen bg-slate-950 text-gray-100">
+          <Sidebar />
+          <div className="flex flex-1 flex-col overflow-hidden">
+            <Header title={getPageTitle(path)} />
+            <AnimatePresence mode="wait">
+              <motion.main
+                key={path}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.15, ease: 'easeOut' }}
+                className="flex-1 overflow-y-auto p-6"
+              >
+                <PageContent path={path} />
+              </motion.main>
+            </AnimatePresence>
+          </div>
+        </div>
       </RouterContext.Provider>
     </QueryClientProvider>
   );

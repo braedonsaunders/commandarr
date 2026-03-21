@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Layout } from '../components/layout/Layout';
+
 import { WidgetGrid } from '../components/dashboard/WidgetGrid';
 
 interface Widget {
@@ -44,7 +44,7 @@ export default function DashboardPage() {
   };
 
   return (
-    <Layout pageTitle="Dashboard">
+    <>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -81,6 +81,6 @@ export default function DashboardPage() {
           />
         )}
       </div>
-    </Layout>
+    </>
   );
 }

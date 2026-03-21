@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Layout } from '../components/layout/Layout';
+
 import { ScrollText, Pause, Play } from 'lucide-react';
 
 interface LogEntry {
@@ -71,7 +71,7 @@ export default function LogsPage() {
   });
 
   return (
-    <Layout pageTitle="Logs">
+    <>
       <div className="flex flex-col h-[calc(100vh-8rem)]">
         <div className="flex items-center justify-between mb-4">
           <div>
@@ -153,6 +153,6 @@ export default function LogsPage() {
           )}
         </div>
       </div>
-    </Layout>
+    </>
   );
 }

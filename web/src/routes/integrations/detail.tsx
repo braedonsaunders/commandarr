@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Layout } from '../../components/layout/Layout';
+
 import { CredentialForm, type CredentialField } from '../../components/integrations/CredentialForm';
 import { StatusBadge } from '../../components/integrations/StatusBadge';
 import { ArrowLeft, Play, AlertTriangle } from 'lucide-react';
@@ -92,13 +92,13 @@ export default function IntegrationDetailPage() {
     setTesting(prev => ({ ...prev, [toolName]: false }));
   };
 
-  if (loading) return <Layout pageTitle="Integration"><div className="text-gray-400 py-20 text-center">Loading...</div></Layout>;
-  if (!integration) return <Layout pageTitle="Integration"><div className="text-gray-400 py-20 text-center">Integration not found</div></Layout>;
+  if (loading) return <div className="text-gray-400 py-20 text-center">Loading...</div>;
+  if (!integration) return <div className="text-gray-400 py-20 text-center">Integration not found</div>;
 
   const tabs = ['credentials', 'tools', 'webhooks'] as const;
 
   return (
-    <Layout pageTitle={integration.name}>
+    <>
       <div className="space-y-6">
         <div className="flex items-center gap-4">
           <a href="/integrations" className="text-gray-400 hover:text-gray-200"><ArrowLeft className="w-5 h-5" /></a>
@@ -199,6 +199,6 @@ export default function IntegrationDetailPage() {
           </div>
         )}
       </div>
-    </Layout>
+    </>
   );
 }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Layout } from '../../components/layout/Layout';
+
 import { Settings, Download, Upload, Save, Check } from 'lucide-react';
 
 export default function GeneralSettingsPage() {
@@ -34,10 +34,10 @@ export default function GeneralSettingsPage() {
     setSettings(prev => ({ ...prev, [key]: value }));
   };
 
-  if (loading) return <Layout pageTitle="Settings"><div className="text-gray-400 py-20 text-center">Loading...</div></Layout>;
+  if (loading) return <div className="text-gray-400 py-20 text-center">Loading...</div>;
 
   return (
-    <Layout pageTitle="Settings">
+    <>
       <div className="space-y-6 max-w-2xl">
         <div>
           <h1 className="text-2xl font-bold text-gray-100">Settings</h1>
@@ -151,6 +151,6 @@ export default function GeneralSettingsPage() {
           </button>
         </div>
       </div>
-    </Layout>
+    </>
   );
 }

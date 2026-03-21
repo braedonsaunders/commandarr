@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Layout } from '../components/layout/Layout';
+
 import { Zap, Plus, Trash2, Play, ChevronDown, ChevronRight } from 'lucide-react';
 
 interface Automation {
@@ -80,7 +80,7 @@ export default function AutomationsPage() {
   const formatDate = (d: string | null) => d ? new Date(d).toLocaleString() : 'Never';
 
   return (
-    <Layout pageTitle="Automations">
+    <>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -222,6 +222,6 @@ export default function AutomationsPage() {
           </div>
         )}
       </div>
-    </Layout>
+    </>
   );
 }

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Layout } from '../../components/layout/Layout';
+
 import { Brain, Check, Play, Search, ChevronDown, X, GripVertical, Trash2, Plus } from 'lucide-react';
 
 interface ConfigField {
@@ -234,10 +234,10 @@ export default function LLMSettingsPage() {
     loadProviders();
   };
 
-  if (loading) return <Layout pageTitle="LLM Settings"><div className="text-gray-400 py-20 text-center">Loading...</div></Layout>;
+  if (loading) return <div className="text-gray-400 py-20 text-center">Loading...</div>;
 
   return (
-    <Layout pageTitle="LLM Settings">
+    <>
       <div className="space-y-6 max-w-2xl">
         <div>
           <h1 className="text-2xl font-bold text-gray-100">LLM Providers</h1>
@@ -370,6 +370,6 @@ export default function LLMSettingsPage() {
           </AnimatePresence>
         </div>
       </div>
-    </Layout>
+    </>
   );
 }

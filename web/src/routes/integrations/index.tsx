@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Layout } from '../../components/layout/Layout';
+
 import { StatusBadge } from '../../components/integrations/StatusBadge';
 import { Tv, Film, Monitor, Plug } from 'lucide-react';
 
@@ -48,7 +48,7 @@ export default function IntegrationsPage() {
   };
 
   return (
-    <Layout pageTitle="Integrations">
+    <>
       <div className="space-y-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-100">Integrations</h1>
@@ -100,6 +100,6 @@ export default function IntegrationsPage() {
           </motion.div>
         )}
       </div>
-    </Layout>
+    </>
   );
 }
