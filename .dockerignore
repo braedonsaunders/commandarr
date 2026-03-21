@@ -1,0 +1,9 @@
+node_modules
+web/node_modules
+dist
+web/dist
+data
+.git
+.claude
+*.md
+!web/src/**/*.md

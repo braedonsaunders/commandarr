@@ -1,0 +1,27 @@
+{
+  "name": "commandarr",
+  "version": "1.0.0",
+  "description": "The AI brain for your media stack",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --hot src/index.ts",
+    "build": "bun run build:web && bun build src/index.ts --outdir dist --target bun",
+    "build:web": "cd web && bun run build",
+    "start": "bun run src/index.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate"
+  },
+  "dependencies": {
+    "hono": "^4.4.0",
+    "drizzle-orm": "^0.31.0",
+    "grammy": "^1.25.0",
+    "croner": "^8.0.0",
+    "nanoid": "^5.0.7",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.1.0",
+    "drizzle-kit": "^0.22.0",
+    "typescript": "^5.5.0"
+  }
+}

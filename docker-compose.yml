@@ -1,0 +1,17 @@
+version: '3.8'
+services:
+  commandarr:
+    build: .
+    container_name: commandarr
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8484}:8484"
+    volumes:
+      - ./data:/app/data
+      - ./integrations:/app/custom-integrations
+    environment:
+      - PORT=8484
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-commandarr-change-this-key}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
+      - PLEX_RESTART_COMMAND=${PLEX_RESTART_COMMAND:-}
