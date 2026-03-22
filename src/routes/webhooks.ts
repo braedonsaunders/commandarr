@@ -97,3 +97,61 @@ webhooks.post('/sonarr', async (c) => {
     return c.json({ success: false }, 500);
   }
 });
+
+webhooks.post('/jellyfin', async (c) => {
+  try {
+    const payload = await c.req.json();
+    const notificationType = payload.NotificationType || payload.Event || 'unknown';
+
+    logger.info('webhook', `Jellyfin webhook received: ${notificationType}`, {
+      event: notificationType,
+      item: payload.Name || payload.ItemName,
+      user: payload.NotificationUsername || payload.UserName,
+    });
+
+    const db = await getDb();
+    await db.insert(auditLog).values({
+      id: nanoid(),
+      timestamp: new Date(),
+      source: 'webhook',
+      action: `jellyfin.${notificationType}`,
+      integration: 'jellyfin',
+      input: JSON.stringify(payload),
+      level: 'info',
+    });
+
+    return c.json({ success: true });
+  } catch (e) {
+    logger.error('webhook', 'Jellyfin webhook error', e);
+    return c.json({ success: false }, 500);
+  }
+});
+
+webhooks.post('/seerr', async (c) => {
+  try {
+    const payload = await c.req.json();
+    const notificationType = payload.notification_type || payload.event || 'unknown';
+
+    logger.info('webhook', `Seerr webhook received: ${notificationType}`, {
+      event: notificationType,
+      subject: payload.subject,
+      user: payload.request?.requestedBy?.displayName,
+    });
+
+    const db = await getDb();
+    await db.insert(auditLog).values({
+      id: nanoid(),
+      timestamp: new Date(),
+      source: 'webhook',
+      action: `seerr.${notificationType}`,
+      integration: 'seerr',
+      input: JSON.stringify(payload),
+      level: 'info',
+    });
+
+    return c.json({ success: true });
+  } catch (e) {
+    logger.error('webhook', 'Seerr webhook error', e);
+    return c.json({ success: false }, 500);
+  }
+});

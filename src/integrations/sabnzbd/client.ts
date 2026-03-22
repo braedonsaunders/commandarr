@@ -1,0 +1,73 @@
+import type { IntegrationClient } from '../_base';
+
+interface SabnzbdCredentials {
+  url: string;
+  apiKey: string;
+}
+
+async function sabnzbdFetch(
+  baseUrl: string,
+  apiKey: string,
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<any> {
+  // SABnzbd uses query parameters for everything, including auth
+  // Append apikey and output=json to every request
+  const separator = path.includes('?') ? '&' : '?';
+  const fullPath = `${path}${separator}apikey=${encodeURIComponent(apiKey)}&output=json`;
+  const url = new URL(fullPath, baseUrl);
+
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+  };
+
+  if (body) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  const response = await fetch(url.toString(), {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      `SABnzbd API error ${response.status}: ${text.slice(0, 300)}`,
+    );
+  }
+
+  const contentType = response.headers.get('content-type') ?? '';
+  if (contentType.includes('application/json')) {
+    return response.json();
+  }
+
+  return response.text();
+}
+
+export function createClient(creds: SabnzbdCredentials): IntegrationClient {
+  const baseUrl = creds.url.replace(/\/+$/, '');
+  const { apiKey } = creds;
+
+  return {
+    async get(path: string, params?: Record<string, string>) {
+      let fullPath = path;
+      if (params) {
+        const searchParams = new URLSearchParams(params);
+        fullPath += (path.includes('?') ? '&' : '?') + searchParams.toString();
+      }
+      return sabnzbdFetch(baseUrl, apiKey, 'GET', fullPath);
+    },
+    async post(path: string, body?: unknown) {
+      return sabnzbdFetch(baseUrl, apiKey, 'POST', path, body);
+    },
+    async put(path: string, body?: unknown) {
+      return sabnzbdFetch(baseUrl, apiKey, 'PUT', path, body);
+    },
+    async delete(path: string) {
+      return sabnzbdFetch(baseUrl, apiKey, 'DELETE', path);
+    },
+  };
+}
