@@ -4,7 +4,7 @@
 
 **The AI brain for your media stack.**
 
-An LLM-powered agent that monitors, controls, and automates your entire Plex/*arr ecosystem through a built-in dashboard, Telegram, and an expanding set of chat + automation surfaces.
+An LLM-powered agent that monitors, controls, and automates your entire Plex/*arr ecosystem through a built-in dashboard, Telegram, and an expanding set of chat + automation surfaces. Installable as a PWA on mobile.
 
 ---
 
@@ -40,13 +40,16 @@ The installer will:
 
 ## Features
 
-- **Chat with your entire media stack** — "What's playing?" / "Add The Bear to Sonarr" / "Approve all pending requests" / "Why are there no subtitles for X?" via the dashboard or Telegram today, with more chat surfaces on the roadmap
-- **90+ built-in tools** — Health checks, restart, search, add media, download queues, subtitle management, request approvals, indexer stats, and more across 18 integrations
+- **Chat with your entire media stack** — "What's playing?" / "Add The Bear to Sonarr" / "Approve all pending requests" / "Why are there no subtitles for X?" / "Dim the lights for movie night" via dashboard, Telegram, or Discord
+- **100+ built-in tools** — Health checks, restart, search, add media, download queues, subtitle management, request approvals, indexer stats, smart home control, and more across 19 integrations
+- **Cross-service orchestration** — The agent reasons across your entire stack: "Something's downloading slowly, figure out why" checks download clients, indexers, and network in one shot
+- **Natural language automations** — "Every morning, check if anything downloaded overnight and send me a summary" — no cron expressions needed
 - **AI-generated live widgets** — "Build me a widget showing who's watching Plex" → auto-refreshing dashboard widget with real-time data
-- **Automations** — Cron-scheduled tasks: "Check Plex every 5 minutes, restart if down, notify me on Telegram"
+- **Mobile PWA** — Install on your phone homescreen with quick-action buttons for pause downloads, restart Plex, approve requests, and more
 - **Wake hooks** — Agent auto-activates when services go down or receive webhook events
 - **Plex auto-restart** — Works on bare metal (Windows/Linux/macOS) and Docker installs
 - **Multi-provider LLM** — OpenRouter, OpenAI, Anthropic, Gemini, Ollama, LM Studio, or any OpenAI-compatible endpoint with automatic fallback chain
+- **Home Assistant integration** — Control lights, scenes, and automations. "Activate movie night" dims the lights and starts the player
 - **Extensible** — Add new integrations by dropping a directory with a manifest + tools
 
 ---
@@ -58,7 +61,7 @@ The installer will:
 |-------------|-------|-------------|
 | **Plex** | 5 | Health check, restart, now playing, libraries, search |
 | **Jellyfin** | 6 | Health check, now playing, libraries, search, recently added, users |
-| **Emby** | 1+ | Early support today; health check is in place and playback/library tooling is a strong next target |
+| **Emby** | 6 | Health check, now playing, libraries, search, recently added, users |
 
 ### Media Management
 | Integration | Tools | Description |
@@ -66,19 +69,19 @@ The installer will:
 | **Radarr** | 5 | Search movies, add by TMDB ID, download queue, calendar, quality profiles |
 | **Sonarr** | 5 | Search shows, add by TVDB ID, download queue, calendar, quality profiles |
 | **Lidarr** | 5 | Search artists, add by MusicBrainz ID, download queue, calendar, quality profiles |
-| **Readarr** | 5 | Search books, add titles, download queue, calendar, quality profiles |
-| **Whisparr** | 5 | Search titles, add content, download queue, calendar, quality profiles |
+| **Readarr** | 5 | Search authors, add by GoodReads ID, download queue, calendar, quality profiles |
+| **Whisparr** | 5 | Search titles, add by TMDB ID, download queue, calendar, quality profiles |
 | **Bazarr** | 6 | Wanted movies/episodes, subtitle history, manual search, providers, system status |
 
 ### Download Clients
 | Integration | Tools | Description |
 |-------------|-------|-------------|
 | **SABnzbd** | 6 | Queue, history, status, pause/resume, add NZB, speed limit |
+| **NZBGet** | 6 | Queue, history, status, pause/resume, add NZB, speed limit |
 | **qBittorrent** | 5 | Torrents list, transfer status, pause/resume, add torrent, speed limit |
 | **Transmission** | 5 | Torrents list, transfer status, pause/resume, add torrent, speed limit |
 | **Deluge** | 5 | Torrents list, transfer status, pause/resume, add torrent, speed limit |
-| **NZBGet** | 4 | Queue, history, status, pause/resume |
-| **Unpackerr** | 1+ | Extraction status today, with room to expand into stuck-unpack diagnostics |
+| **Unpackerr** | 3 | Extraction status, history, active queue |
 
 ### Indexers & Requests
 | Integration | Tools | Description |
@@ -86,48 +89,38 @@ The installer will:
 | **Prowlarr** | 5 | Indexer list, indexer stats, cross-indexer search, test indexer, health warnings |
 | **Seerr** | 6 | List/approve/decline requests, search, trending, users (Overseerr/Jellyseerr compatible) |
 
-### Monitoring
+### Monitoring & Analytics
 | Integration | Tools | Description |
 |-------------|-------|-------------|
 | **Tautulli** | 6 | Current activity, watch history, recently added, most watched, users, server info |
 
-Coverage varies by integration, but the goal is simple: Commandarr should understand the entire request → indexer → downloader → importer → subtitles → playback chain, not just individual apps in isolation.
+### Smart Home
+| Integration | Tools | Description |
+|-------------|-------|-------------|
+| **Home Assistant** | 7 | Entity states, call service, scenes, activate scene, history, automations, trigger automation |
 
-### High-Impact Integrations To Build Next
+### System Tools
+| Tool | Description |
+|------|-------------|
+| `commandarr_diagnose` | Health check across all configured integrations in one shot |
+| `commandarr_stack_summary` | Active streams, download queues, pending requests — full stack at a glance |
+| `commandarr_create_automation` | Create automations with natural language schedules |
+| `commandarr_list_automations` | List all automations with status and next run |
+| `commandarr_toggle_automation` | Enable/disable automations by name or ID |
+| `commandarr_create_widget` | AI-generated live dashboard widgets |
 
-If the goal is "people in r/selfhosted immediately get why this matters," these are the best next bets:
+### Coming Soon
 
-- **Audiobookshelf** — Books and audiobooks are a huge adjacent use case, and it pairs naturally with Readarr
-- **Komga or Kavita** — Manga/comics/ebooks would widen the audience beyond the classic Plex + Sonarr + Radarr stack
-- **Notifiarr** — Lets Commandarr plug into a notification hub the *arr community already trusts
-- **Recyclarr** — Quality profile and custom format sync would make Commandarr useful even when people are not actively chatting with it
-- **Tdarr / FileFlows / Unmanic** — "Why is this transcode job backing up?" is exactly the kind of cross-service AI workflow people remember
-- **Mylar3** — A natural complement to the comics/reading ecosystem
-- **Uptime Kuma** — Strong for service health, incident timelines, and "what changed?" troubleshooting
-- **Portainer** — Gives the agent a safe operational surface for container restarts and deployment visibility
-- **Home Assistant** — Opens the door to richer household automations like quiet hours, power-aware downloads, and presence-based actions
-- **Discord** — Not a media integration, but a big adoption unlock because communities already live there
+- **Audiobookshelf** — Books and audiobooks paired with Readarr
+- **Komga / Kavita** — Manga, comics, and ebooks
+- **Tdarr / FileFlows** — Transcoding management
+- **Recyclarr** — TRaSH Guides quality profile sync
+- **Notifiarr** — Notification aggregation hub
+- **Portainer** — Docker container management
+- **Uptime Kuma** — Service uptime monitoring
+- **Mylar3** — Comic book management
 
-Community integrations are welcome: copy `src/integrations/_template/` and follow the pattern.
-
----
-
-## What Would Make Commandarr World-Class
-
-The big opportunity is not just "more tools." It is making the whole stack feel understandable and self-healing.
-
-- **Cross-stack diagnosis** — Answer "why is this missing?" by tracing the full chain from request, to indexer, to downloader, to import, to subtitles, to playback
-- **Safe operator mode** — Dry runs, approval gates, audit logs, and undo-friendly actions so users trust the agent with real admin tasks
-- **Opinionated automations** — Ship prebuilt recipes like "heal Plex," "clear stalled downloads," "nightly subtitle sweep," and "approve requests from trusted users"
-- **Auto-discovery and setup** — Detect common containers/services on the local network and pre-fill integration settings instead of making users hunt for every URL and API key
-- **Shareable widgets and playbooks** — Let the community publish prompts, automations, and dashboard widgets the way Home Assistant users share blueprints
-- **Memory and preferences** — Learn house rules like preferred qualities, quiet hours, request policies, and who gets auto-approved
-- **Event timeline + incident review** — Show a clean narrative of what happened across services when something breaks
-- **Plugin SDK that feels great** — Excellent docs, examples, test harnesses, and a dead-simple packaging flow for community-built integrations
-- **First-class mobile/chat UX** — Telegram is a strong start; Discord, push notifications, and excellent read-only mobile dashboards would multiply daily usage
-- **Recommendations with actionability** — Do not just show stats; suggest fixes, explain tradeoffs, and offer one-tap remediation
-
-If Commandarr becomes the fastest way to understand, fix, and improve a self-hosted media stack, the community will market it for you.
+Community integrations welcome — copy `src/integrations/_template/` and follow the pattern.
 
 ---
 

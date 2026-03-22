@@ -482,6 +482,41 @@ api.put('/llm/fallback-order', async (c) => {
   return c.json({ success: true });
 });
 
+// ──────────────────────────── Push Notifications ────────────────────────────
+
+api.post('/push/subscribe', async (c) => {
+  const subscription = await c.req.json();
+  const db = await getDb();
+
+  // Store subscription in settings
+  await db.insert(settings).values({
+    key: `push_subscription:${nanoid(8)}`,
+    value: JSON.stringify(subscription),
+  });
+
+  return c.json({ success: true });
+});
+
+api.delete('/push/subscribe', async (c) => {
+  const { endpoint } = await c.req.json();
+  const db = await getDb();
+
+  // Find and remove subscription by endpoint
+  const allSubs = await db.select().from(settings);
+  for (const sub of allSubs) {
+    if (sub.key.startsWith('push_subscription:')) {
+      try {
+        const parsed = JSON.parse(sub.value || '{}');
+        if (parsed.endpoint === endpoint) {
+          await db.delete(settings).where(eq(settings.key, sub.key));
+        }
+      } catch {}
+    }
+  }
+
+  return c.json({ success: true });
+});
+
 // ──────────────────────────── Settings ────────────────────────────
 
 api.get('/settings', async (c) => {

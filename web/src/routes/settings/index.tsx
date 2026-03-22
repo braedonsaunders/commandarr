@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Settings, Download, Upload, Save, Check, Brain, Play, Search,
-  ChevronDown, X, GripVertical, Plus, Shield, Eye, EyeOff,
+  ChevronDown, X, GripVertical, Plus, Shield, Eye, EyeOff, Bell, Zap,
 } from 'lucide-react';
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -332,11 +332,168 @@ function LLMTab() {
   );
 }
 
+// ─── Tab: Agent Behavior ────────────────────────────────────────────
+
+interface WakeHook {
+  integrationId: string;
+  event: string;
+  prompt: string;
+  enabled: boolean;
+}
+
+function AgentTab({ settings, updateSetting }: { settings: Record<string, string>; updateSetting: (k: string, v: string) => void }) {
+  const [hooks, setHooks] = useState<WakeHook[]>([]);
+  const [loadingHooks, setLoadingHooks] = useState(true);
+  const [savingHook, setSavingHook] = useState<string | null>(null);
+  const [editingPrompt, setEditingPrompt] = useState<string | null>(null);
+  const [promptValue, setPromptValue] = useState('');
+
+  useEffect(() => {
+    fetch('/api/wake-hooks').then(r => r.json()).then(data => { setHooks(data); setLoadingHooks(false); }).catch(() => setLoadingHooks(false));
+  }, []);
+
+  const toggleHook = async (integrationId: string, event: string, enabled: boolean) => {
+    const key = `${integrationId}:${event}`;
+    setSavingHook(key);
+    await fetch(`/api/wake-hooks/${integrationId}/${event}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+    });
+    setHooks(prev => prev.map(h => h.integrationId === integrationId && h.event === event ? { ...h, enabled } : h));
+    setSavingHook(null);
+  };
+
+  const savePrompt = async (integrationId: string, event: string) => {
+    const key = `${integrationId}:${event}`;
+    setSavingHook(key);
+    await fetch(`/api/wake-hooks/${integrationId}/${event}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: promptValue }),
+    });
+    setHooks(prev => prev.map(h => h.integrationId === integrationId && h.event === event ? { ...h, prompt: promptValue } : h));
+    setEditingPrompt(null);
+    setSavingHook(null);
+  };
+
+  const agentMode = settings.agentMode || 'all';
+  const healthInterval = settings.healthCheckInterval || '60';
+
+  return (
+    <div className="space-y-6">
+      {/* Agent Mode */}
+      <div className="p-6 bg-slate-900 rounded-xl border border-slate-800 space-y-4">
+        <h2 className="text-lg font-semibold text-gray-100 flex items-center gap-2">
+          <Zap className="w-5 h-5 text-amber-400" /> Agent Activation
+        </h2>
+        <p className="text-sm text-gray-400">Control when the agent can be triggered automatically.</p>
+
+        <div className="space-y-2">
+          {[
+            { value: 'all', label: 'Chat + Automations + Wake Hooks', desc: 'Agent responds to chat, runs scheduled automations, and reacts to events (recommended)' },
+            { value: 'chat_and_automations', label: 'Chat + Automations Only', desc: 'Agent responds to chat and runs automations, but does not react to integration events' },
+            { value: 'chat_only', label: 'Chat Only', desc: 'Agent only responds when you talk to it — no background activity' },
+            { value: 'disabled', label: 'Disabled', desc: 'Agent does not respond to anything (integrations still work for widgets/dashboard)' },
+          ].map(opt => (
+            <label key={opt.value}
+              className={`flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-colors ${agentMode === opt.value ? 'bg-amber-500/10 border border-amber-500/30' : 'bg-slate-800 border border-transparent hover:bg-slate-800/80'}`}>
+              <input type="radio" name="agentMode" value={opt.value} checked={agentMode === opt.value}
+                onChange={() => updateSetting('agentMode', opt.value)}
+                className="mt-1 accent-amber-500" />
+              <div>
+                <div className="text-sm font-medium text-gray-200">{opt.label}</div>
+                <div className="text-xs text-gray-500">{opt.desc}</div>
+              </div>
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {/* Health Check Interval */}
+      <div className="p-6 bg-slate-900 rounded-xl border border-slate-800 space-y-4">
+        <h2 className="text-lg font-semibold text-gray-100">Health Check Polling</h2>
+        <p className="text-sm text-gray-400">How often Commandarr checks if your integrations are online. Used for wake hooks and dashboard status.</p>
+        <div>
+          <label className="block text-sm text-gray-300 mb-1">Interval (seconds)</label>
+          <select value={healthInterval} onChange={e => updateSetting('healthCheckInterval', e.target.value)}
+            className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-gray-100 focus:outline-none focus:border-amber-500">
+            <option value="30">Every 30 seconds</option>
+            <option value="60">Every 60 seconds (default)</option>
+            <option value="120">Every 2 minutes</option>
+            <option value="300">Every 5 minutes</option>
+            <option value="600">Every 10 minutes</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Wake Hooks */}
+      <div className="p-6 bg-slate-900 rounded-xl border border-slate-800 space-y-4">
+        <h2 className="text-lg font-semibold text-gray-100 flex items-center gap-2">
+          <Bell className="w-5 h-5 text-gray-400" /> Wake Hooks
+        </h2>
+        <p className="text-sm text-gray-400">
+          Events that automatically wake the agent and trigger an action. Each hook has a prompt that tells the agent what to do.
+        </p>
+
+        {loadingHooks ? (
+          <div className="text-gray-500 text-sm text-center py-4">Loading wake hooks...</div>
+        ) : hooks.length === 0 ? (
+          <div className="text-gray-500 text-sm text-center py-4">No wake hooks available. Configure integrations first.</div>
+        ) : (
+          <div className="space-y-2">
+            {hooks.map(hook => {
+              const key = `${hook.integrationId}:${hook.event}`;
+              const isEditing = editingPrompt === key;
+              return (
+                <div key={key} className="bg-slate-800 rounded-lg p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-gray-200">{hook.integrationId}</span>
+                        <span className="text-xs text-gray-500">→</span>
+                        <span className="text-xs font-mono text-amber-400/80">{hook.event}</span>
+                      </div>
+                    </div>
+                    <button onClick={() => toggleHook(hook.integrationId, hook.event, !hook.enabled)}
+                      disabled={savingHook === key}
+                      className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${hook.enabled ? 'bg-amber-500' : 'bg-slate-600'}`}>
+                      <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${hook.enabled ? 'left-5' : 'left-0.5'}`} />
+                    </button>
+                  </div>
+
+                  {/* Prompt */}
+                  {isEditing ? (
+                    <div className="space-y-2">
+                      <textarea value={promptValue} onChange={e => setPromptValue(e.target.value)} rows={3}
+                        className="w-full px-3 py-2 text-sm bg-slate-900 border border-slate-600 rounded-lg text-gray-100 focus:outline-none focus:border-amber-500 resize-none" />
+                      <div className="flex gap-2">
+                        <button onClick={() => savePrompt(hook.integrationId, hook.event)}
+                          className="px-3 py-1 text-xs bg-amber-500 hover:bg-amber-600 text-black font-medium rounded transition-colors">Save</button>
+                        <button onClick={() => setEditingPrompt(null)}
+                          className="px-3 py-1 text-xs text-gray-400 hover:text-gray-200">Cancel</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button onClick={() => { setEditingPrompt(key); setPromptValue(hook.prompt); }}
+                      className="w-full text-left text-xs text-gray-400 bg-slate-900/50 rounded p-2 hover:bg-slate-900 transition-colors">
+                      {hook.prompt}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Settings Page ──────────────────────────────────────────────────
 
 const TABS = [
   { id: 'general', label: 'General', icon: Settings },
   { id: 'llm', label: 'LLM Providers', icon: Brain },
+  { id: 'agent', label: 'Agent', icon: Zap },
   { id: 'auth', label: 'Authentication', icon: Shield },
 ] as const;
 
@@ -383,7 +540,7 @@ export default function SettingsPage() {
                 </motion.span>
               )}
             </AnimatePresence>
-            {activeTab !== 'llm' && (
+            {(activeTab === 'general' || activeTab === 'auth' || activeTab === 'agent') && (
               <button onClick={handleSave} disabled={saving}
                 className="flex items-center gap-2 px-5 py-2 bg-amber-500 hover:bg-amber-600 text-black font-medium rounded-lg transition-colors disabled:opacity-50">
                 <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save'}
@@ -412,6 +569,7 @@ export default function SettingsPage() {
           <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
             {activeTab === 'general' && <GeneralTab settings={settings} updateSetting={updateSetting} />}
             {activeTab === 'llm' && <LLMTab />}
+            {activeTab === 'agent' && <AgentTab settings={settings} updateSetting={updateSetting} />}
             {activeTab === 'auth' && <AuthTab settings={settings} updateSetting={updateSetting} />}
           </motion.div>
         </AnimatePresence>
