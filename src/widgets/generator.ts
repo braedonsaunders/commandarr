@@ -5,33 +5,129 @@ import { logger } from '../utils/logger';
 import { eq } from 'drizzle-orm';
 import { GeneratedWidgetSchema } from './types';
 import type { WidgetRecord } from './types';
+import type { ToolDef } from '../llm/provider';
 
 // ─── Constants ────────────────────────────────────────────────────────
-const WIDGET_MAX_OUTPUT_TOKENS = 8192;
-const WIDGET_MAX_AUTO_CONTINUATIONS = 2;
+const WIDGET_MAX_OUTPUT_TOKENS = 16384;
 const WIDGET_TEMPERATURE = 0.15;
+
+// ─── Tool Definition ─────────────────────────────────────────────────
+
+/**
+ * The create_widget tool definition — this is the structured output format
+ * that the LLM will call with proper JSON arguments, eliminating all
+ * JSON extraction / parsing issues.
+ */
+const CREATE_WIDGET_TOOL: ToolDef = {
+  type: 'function',
+  function: {
+    name: 'create_widget',
+    description: 'Create a dashboard widget with HTML, CSS, and JavaScript. Call this tool with the complete widget definition.',
+    parameters: {
+      type: 'object',
+      required: ['name', 'description', 'capabilities', 'controls', 'html', 'css', 'js', 'summary'],
+      properties: {
+        name: {
+          type: 'string',
+          description: 'Short widget name (2-80 chars)',
+        },
+        description: {
+          type: 'string',
+          description: 'One-line description of what this widget shows (1-96 chars)',
+        },
+        capabilities: {
+          type: 'array',
+          items: { type: 'string', enum: ['context', 'state', 'integration-control'] },
+          description: 'Widget capabilities: context (reads data), state (persists preferences), integration-control (sends commands)',
+        },
+        controls: {
+          type: 'array',
+          description: 'Widget controls for structured dashboard actions',
+          items: {
+            type: 'object',
+            required: ['id', 'label', 'kind', 'parameters', 'execution'],
+            properties: {
+              id: { type: 'string' },
+              label: { type: 'string' },
+              description: { type: 'string' },
+              kind: { type: 'string', enum: ['button', 'toggle', 'select', 'form'] },
+              parameters: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  required: ['key', 'label', 'type'],
+                  properties: {
+                    key: { type: 'string' },
+                    label: { type: 'string' },
+                    type: { type: 'string', enum: ['string', 'number', 'boolean', 'enum'] },
+                    required: { type: 'boolean' },
+                    defaultValue: {},
+                    options: {
+                      type: 'array',
+                      items: {
+                        type: 'object',
+                        properties: {
+                          label: { type: 'string' },
+                          value: { type: 'string' },
+                        },
+                      },
+                    },
+                  },
+                },
+              },
+              execution: {
+                type: 'object',
+                required: ['kind'],
+                properties: {
+                  kind: { type: 'string', enum: ['operation', 'state'] },
+                  operation: {
+                    type: 'object',
+                    properties: {
+                      protocol: { type: 'string' },
+                      integrationId: { type: 'string' },
+                      method: { type: 'string' },
+                      path: { type: 'string' },
+                      body: {},
+                    },
+                  },
+                  patch: { type: 'object' },
+                  mergeStrategy: { type: 'string', enum: ['deep-merge', 'replace'] },
+                },
+              },
+              confirmation: { type: 'string' },
+              successMessage: { type: 'string' },
+              danger: { type: 'boolean' },
+            },
+          },
+        },
+        html: {
+          type: 'string',
+          description: 'Pure HTML markup for the widget body. No <script>, <style>, <html>, <head>, <body>, or <!DOCTYPE> tags.',
+        },
+        css: {
+          type: 'string',
+          description: 'Pure CSS rules. No <style> tags.',
+        },
+        js: {
+          type: 'string',
+          description: 'Pure JavaScript code. No <script> tags. Use var, not const/let. Use function(), not arrows.',
+        },
+        summary: {
+          type: 'string',
+          description: 'Brief summary of what was built (1-320 chars)',
+        },
+      },
+    },
+  },
+};
 
 // ─── System Prompt ───────────────────────────────────────────────────
 
 function buildSystemPrompt(integrationEndpoints: string): string {
   return `You are a world-class widget code generator for Commandarr, a media server management dashboard.
-You generate self-contained, production-quality, visually stunning dashboard widgets that look like professional applications.
+You generate self-contained, production-quality, visually stunning dashboard widgets.
 
-## OUTPUT FORMAT
-
-You MUST respond with a single JSON object (no markdown fences, no explanation before or after).
-The JSON object has this exact shape:
-
-{
-  "name": "Short Widget Name (2-80 chars)",
-  "description": "One-line description of what this widget shows (1-96 chars)",
-  "capabilities": ["context"],
-  "controls": [],
-  "html": "<div id='widget'>...</div>",
-  "css": "body { ... }",
-  "js": "async function load() { ... }",
-  "summary": "Brief summary of what was built and why (1-320 chars)"
-}
+You MUST call the create_widget tool with the complete widget definition. Do not output JSON directly — use the tool.
 
 ## FIELD RULES
 
@@ -41,127 +137,70 @@ The JSON object has this exact shape:
 - "integration-control" — widget sends commands (POST/PUT/DELETE) to integrations
 
 ### controls (array, max 40)
-Each control enables the host dashboard to expose structured actions:
-{
-  "id": "unique-kebab-id",
-  "label": "Button Label",
-  "description": "What this does",
-  "kind": "button" | "toggle" | "select" | "form",
-  "parameters": [
-    {
-      "key": "paramName",
-      "label": "Param Label",
-      "type": "string" | "number" | "boolean" | "enum",
-      "required": true,
-      "defaultValue": "...",
-      "options": [{ "label": "...", "value": "..." }]
-    }
-  ],
-  "execution": {
-    "kind": "operation",
-    "operation": {
-      "protocol": "http",
-      "integrationId": "plex",
-      "method": "POST",
-      "path": "/api/v3/command",
-      "body": { "name": "{{paramName}}" }
-    }
-  }
-  OR
-  "execution": {
-    "kind": "state",
-    "patch": { "view": "compact" },
-    "mergeStrategy": "deep-merge"
-  },
-  "confirmation": "Are you sure?",
-  "successMessage": "Done!",
-  "danger": false
-}
-
-A refresh control should always be: { "id": "refresh", "label": "Refresh", "kind": "button", "parameters": [], "execution": { "kind": "state", "patch": {} } }
+Each control enables the host dashboard to expose structured actions.
+A refresh control should always be: { id: "refresh", label: "Refresh", kind: "button", parameters: [], execution: { kind: "state", patch: {} } }
 
 ### html (max 24KB)
 - Pure HTML markup. No <script> or <style> tags — those go in js/css fields.
 - No <html>, <head>, <body>, or <!DOCTYPE> tags — the runtime wraps your content.
-- Use semantic elements: <div>, <span>, <table>, <ul>, etc.
 - Images: both http: and https: URLs are allowed. Data URIs also work.
-- For images from local services (Radarr, Sonarr, Plex, etc), proxy through commandarr.fetch or use direct URLs.
 
 ### css (max 24KB)
 - Pure CSS rules. No <style> tags.
 - Base styles are automatically applied (dark theme, system font).
-- Your CSS is injected in a <style> block.
 - USE CSS TO ITS FULL POTENTIAL — gradients, animations, transforms, backdrop-filter, box-shadow, transitions, keyframes.
 
 ### js (max 48KB)
 - Pure JavaScript. No <script> tags.
-- Your code runs after DOMContentLoaded automatically.
+- Your code runs automatically after the page loads.
 - No ES modules, no import/export, no external dependencies.
 - Use var instead of const/let for maximum compatibility.
 - Use function() {} instead of arrow functions for compatibility.
-- When building HTML strings, use single quotes for HTML attributes to avoid JSON escaping issues.
-  Example: '<div class=\\'item\\'>' instead of '<div class="item">'
-  Or use template approach: '<div class="item">' is fine in the js field as long as you don't nest it in another string.
+- When building HTML strings, use single quotes for HTML attributes: '<div class=\\'item\\'>'
 
 ## RUNTIME API — window.commandarr
-
-The widget runtime injects a global \`commandarr\` object:
 
 ### commandarr.fetch(url, options?)
 Make HTTP requests through the Commandarr proxy. Returns a Promise resolving to parsed JSON.
 - url: API path like '/api/proxy/plex/status/sessions'
 - options: optional { method, headers, body } — defaults to GET
 
-### commandarr.getState()
-Returns a Promise resolving to the widget's persisted state object.
-Use this on startup to restore user preferences.
-
-### commandarr.setState(state)
-Persists a state object server-side. Returns a Promise.
-The state survives page reloads and browser restarts.
+### commandarr.getState() / commandarr.setState(state)
+Persisted state that survives page reloads and browser restarts.
 
 ### commandarr.invokeControl(controlId, input?)
 Executes a declared control. Returns a Promise with the result.
-Only works for controls listed in the controls array.
 
 ### commandarr.setStatus(text)
 Sets a status text displayed in the widget's title bar.
-Useful for showing "Loading...", "Updated 5s ago", error states, etc.
 
 ### commandarr.ready()
 MUST be called when the widget has finished initial setup.
 The dashboard shows a loading spinner until ready() is called.
-Call it after your first data load completes (even if data is empty).
 
 ### commandarr.config
 - commandarr.config.refreshInterval — default polling interval (15000ms)
 - commandarr.config.theme — 'dark'
-- commandarr.config.widgetId — this widget's unique ID
-- commandarr.config.capabilities — array of this widget's capabilities
+- commandarr.config.widgetId — unique widget ID
+- commandarr.config.capabilities — array of capabilities
 
 ## DATA LOADING PATTERN
 
 \`\`\`js
 var state = {};
-
 async function load() {
   try {
     commandarr.setStatus('Refreshing...');
     var data = await commandarr.fetch('/api/proxy/plex/status/sessions');
-    // Update DOM with data
     commandarr.setStatus('');
   } catch(e) {
     commandarr.setStatus('Error: ' + e.message);
   }
 }
-
-// Restore persisted state, then load
 commandarr.getState().then(function(s) {
   state = s || {};
-  // Apply state to UI (e.g., selected tab, filters)
   load().then(function() { commandarr.ready(); });
 });
-
 setInterval(load, commandarr.config.refreshInterval);
 \`\`\`
 
@@ -170,81 +209,46 @@ ${integrationEndpoints}
 
 ## VISUAL DESIGN REQUIREMENTS — THIS IS CRITICAL
 
-You are generating widgets for a premium, professional media management dashboard.
 Every widget must look like it belongs in a high-end commercial application.
 
 ### Color Palette
-- Background: transparent (inherits from dashboard) or dark surfaces #0f0f1a, #1a1a2e, #16162a
-- Cards/panels: #1c1c32, #22223a with subtle borders #2a2a4a or #1e1e3a
+- Background: transparent or dark surfaces #0f0f1a, #1a1a2e, #16162a
+- Cards/panels: #1c1c32, #22223a with subtle borders #2a2a4a
 - Text primary: #f0f0f0, secondary: #a0a0c0, muted: #6a6a8a
 - Accent: #E5A00D (amber/gold)
 - Brand colors: Plex #E5A00D, Radarr #FFC230, Sonarr #35C5F4, Jellyfin #00A4DC
 - Success: #50c878, Warning: #FFC230, Error: #ef4444, Info: #35C5F4
 
-### Visual Effects (USE THESE — they make widgets look premium)
+### Visual Effects
 - Glassmorphism: background: rgba(30, 30, 60, 0.6); backdrop-filter: blur(12px);
-- Gradient borders: border-image: linear-gradient(135deg, #E5A00D33, #35C5F433) 1;
-- Subtle box-shadows: box-shadow: 0 4px 24px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.05);
-- Glow effects for status indicators: box-shadow: 0 0 12px rgba(80,200,120,0.3);
+- Subtle box-shadows: box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+- Glow effects for status: box-shadow: 0 0 12px rgba(80,200,120,0.3);
 - Smooth transitions: transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-- Hover effects that slightly elevate cards: transform: translateY(-2px);
-- CSS animations for loading spinners, progress bars, etc.
+- Hover effects that elevate: transform: translateY(-2px);
+- CSS animations for spinners, progress bars
 - Gradient text for headers: background: linear-gradient(135deg, #E5A00D, #FFC230); -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-- Rounded corners: 8-12px for cards, 4-6px for badges/pills
-- Use opacity and subtle color shifts for interactive states
+- Rounded corners: 8-12px for cards, 4-6px for badges
 
-### Layout Principles
-- Use CSS Grid or Flexbox for all layouts — never use floats or absolute positioning for layout
-- Responsive — widget may render at any size from narrow sidebar to full desktop width
-- Cards should have consistent padding (12-16px) and spacing (8-12px gaps)
-- Use proper visual hierarchy: larger/bolder titles, muted secondary info
-- Group related information with subtle dividers or card boundaries
-- Truncate long text with ellipsis (text-overflow: ellipsis)
-- Use consistent spacing rhythm (4px, 8px, 12px, 16px, 24px)
+### Professional Quality
+- Every surface: border, shadow, or background — no floating text
+- Cards: rounded corners + padding
+- Lists: row separators
+- Images: border-radius, object-fit, fallback placeholders
+- Numbers: formatted with commas, units, relative time
+- Loading state with styled spinner — never blank
+- Handle empty/error states with styled cards
+- Use emoji sparingly — prefer CSS shapes
 
-### Content Patterns
-- Show loading state with a styled spinner before data arrives — never blank content
-- Handle empty states with an icon + friendly message + muted subtitle
-- Handle errors gracefully with styled error cards, not raw error text
-- For lists: use styled scrollable containers with consistent row heights
-- For stats: use large bold numbers with small labels beneath
-- For progress: use gradient progress bars, not plain text percentages
-- For status: use colored dots/pills with glow effects, not plain text
-- Use emoji sparingly and only in empty states — prefer SVG icons or CSS shapes
-
-### Typography
-- Font: system-ui, -apple-system, sans-serif (auto-applied by runtime)
-- Headers: 16-18px, font-weight 600-700
-- Body: 13-14px, font-weight 400
-- Labels/badges: 10-11px, font-weight 600, letter-spacing 0.5-1px, uppercase
-- Line height: 1.4-1.6 for body text
-- Use font-weight contrast for visual hierarchy (not just size)
-
-### Professional Quality Checklist
-- Every surface should have a border, shadow, or background — no raw floating text
-- Cards must have rounded corners and padding
-- Lists must have row separators (subtle borders or alternating backgrounds)
-- Images must have border-radius, object-fit, and fallback placeholders
-- Buttons must have hover/active states
-- Numbers should be formatted (commas, units, relative time)
-- Use CSS Grid for dashboard-style stat layouts
-- Every widget must feel "complete" — no raw unstyled elements
-
-## IMPORTANT RULES — FOLLOW EXACTLY
-- Do NOT use ES modules (import/export) — the JS runs as a plain script
-- Do NOT reference external CDNs or script libraries
-- Images from local network services (http://) ARE allowed
-- Do NOT use arrow functions — use function() {} everywhere for compatibility
-- Do NOT use const or let — use var for all variable declarations
-- Do NOT include <script>, <style>, <html>, <head>, <body>, or <!DOCTYPE> tags in any field
+## IMPORTANT RULES
+- No ES modules, no external CDNs
+- Images from http:// local services ARE allowed
+- No arrow functions — use function() {} everywhere
+- No const/let — use var
+- No <script>, <style>, <html>, <head>, <body>, <!DOCTYPE> in any field
 - Always call commandarr.ready() after initial setup
 - Always include a "refresh" control for data-fetching widgets
-- When building HTML strings in JS, prefer single quotes for attributes or use string concatenation
-- Handle all errors gracefully with try/catch — never let the widget crash silently
-- Test your logic mentally — make sure loops, conditionals, and string building are correct
-- HTML attributes in the html field must use proper quotes, not escaped quotes (\\")
-- In the CSS field, do NOT escape quotes — write them normally
-- The widget MUST look visually impressive — plain text output is unacceptable`;
+- Handle errors with try/catch
+- The widget MUST look visually impressive`;
 }
 
 // ─── Integration Endpoint Discovery ──────────────────────────────────
@@ -269,77 +273,55 @@ async function buildIntegrationEndpoints(): Promise<string> {
       endpointDocs.push(`### ${name} (${id}) — ${healthy ? 'healthy' : 'unhealthy'}`);
       endpointDocs.push(`Base: commandarr.fetch('/api/proxy/${id}/...')`);
 
-      // Add known endpoints per integration type
       switch (id) {
         case 'plex':
-          endpointDocs.push(`  /api/proxy/plex/status/sessions → { MediaContainer: { Metadata: [{ title, grandparentTitle, User: {title}, Player: {title}, viewOffset, duration, TranscodeSession?, type }] } }`);
-          endpointDocs.push(`  /api/proxy/plex/library/sections → { MediaContainer: { Directory: [{ title, type, key }] } }`);
-          endpointDocs.push(`  /api/proxy/plex/search?query=TERM → { MediaContainer: { Metadata: [...] } }`);
+          endpointDocs.push(`  /api/proxy/plex/status/sessions → { MediaContainer: { Metadata: [...] } }`);
+          endpointDocs.push(`  /api/proxy/plex/library/sections → { MediaContainer: { Directory: [...] } }`);
           break;
         case 'radarr':
-          endpointDocs.push(`  /api/proxy/radarr/api/v3/queue → { records: [{ title, status, sizeleft, size, timeleft, movie: {title} }] }`);
-          endpointDocs.push(`  /api/proxy/radarr/api/v3/calendar?start=YYYY-MM-DD&end=YYYY-MM-DD → [{ title, year, inCinemas, digitalRelease, physicalRelease, overview, hasFile, movieFile, images: [{coverType, remoteUrl}], status }]`);
-          endpointDocs.push(`  /api/proxy/radarr/api/v3/movie → [{ title, year, hasFile, sizeOnDisk, status, images: [{coverType, remoteUrl}] }]`);
+          endpointDocs.push(`  /api/proxy/radarr/api/v3/queue → { records: [...] }`);
+          endpointDocs.push(`  /api/proxy/radarr/api/v3/calendar?start=YYYY-MM-DD&end=YYYY-MM-DD → [{ title, year, inCinemas, digitalRelease, physicalRelease, overview, hasFile, images: [{coverType, remoteUrl}] }]`);
+          endpointDocs.push(`  /api/proxy/radarr/api/v3/movie → [{ title, year, hasFile, sizeOnDisk, images }]`);
           endpointDocs.push(`  /api/proxy/radarr/api/v3/system/status → { version, ... }`);
-          endpointDocs.push(`  For movie posters: use movie.images array, find coverType='poster', use remoteUrl (TMDB URL, https)`);
+          endpointDocs.push(`  For posters: use images array, find coverType='poster', use remoteUrl (TMDB https URL)`);
           break;
         case 'sonarr':
-          endpointDocs.push(`  /api/proxy/sonarr/api/v3/queue → { records: [{ title, status, sizeleft, size, timeleft, series: {title}, episode: {seasonNumber, episodeNumber, title} }] }`);
+          endpointDocs.push(`  /api/proxy/sonarr/api/v3/queue → { records: [...] }`);
           endpointDocs.push(`  /api/proxy/sonarr/api/v3/calendar?start=YYYY-MM-DD&end=YYYY-MM-DD → [{ series: {title, images}, seasonNumber, episodeNumber, title, airDateUtc, hasFile }]`);
-          endpointDocs.push(`  /api/proxy/sonarr/api/v3/series → [{ title, seasons, episodeFileCount, episodeCount, images: [{coverType, remoteUrl}] }]`);
-          endpointDocs.push(`  For series posters: use series.images array, find coverType='poster', use remoteUrl`);
+          endpointDocs.push(`  /api/proxy/sonarr/api/v3/series → [{ title, seasons, episodeFileCount, episodeCount, images }]`);
           break;
         case 'jellyfin':
-          endpointDocs.push(`  /api/proxy/jellyfin/Sessions → [{ UserName, Client, DeviceName, NowPlayingItem?, PlayState? }]`);
-          endpointDocs.push(`  /api/proxy/jellyfin/Library/MediaFolders → { Items: [{ Name, CollectionType, Id }] }`);
-          break;
-        case 'emby':
-          endpointDocs.push(`  /api/proxy/emby/Sessions → [{ UserName, Client, DeviceName, NowPlayingItem?, PlayState? }]`);
+          endpointDocs.push(`  /api/proxy/jellyfin/Sessions → [{ UserName, Client, NowPlayingItem?, PlayState? }]`);
           break;
         case 'sabnzbd':
-          endpointDocs.push(`  /api/proxy/sabnzbd/api?mode=queue&output=json → { queue: { slots: [{ filename, status, percentage, timeleft, mb, mbleft }], speed, sizeleft, timeleft } }`);
-          endpointDocs.push(`  /api/proxy/sabnzbd/api?mode=history&output=json → { history: { slots: [...] } }`);
+          endpointDocs.push(`  /api/proxy/sabnzbd/api?mode=queue&output=json → { queue: { slots: [...], speed, timeleft } }`);
           break;
         case 'qbittorrent':
-          endpointDocs.push(`  /api/proxy/qbittorrent/api/v2/torrents/info → [{ name, state, progress, dlspeed, upspeed, size, eta }]`);
-          endpointDocs.push(`  /api/proxy/qbittorrent/api/v2/transfer/info → { dl_info_speed, up_info_speed, ... }`);
-          break;
-        case 'transmission':
-          endpointDocs.push(`  /api/proxy/transmission/transmission/rpc (POST with method: "torrent-get") → { arguments: { torrents: [...] } }`);
-          break;
-        case 'deluge':
-          endpointDocs.push(`  /api/proxy/deluge/json (POST RPC) → { result: ... }`);
+          endpointDocs.push(`  /api/proxy/qbittorrent/api/v2/torrents/info → [{ name, state, progress, dlspeed, size, eta }]`);
           break;
         case 'tautulli':
           endpointDocs.push(`  /api/proxy/tautulli/api/v2?cmd=get_activity → { response: { data: { sessions: [...] } } }`);
-          endpointDocs.push(`  /api/proxy/tautulli/api/v2?cmd=get_history → { response: { data: { data: [...] } } }`);
           break;
         case 'prowlarr':
           endpointDocs.push(`  /api/proxy/prowlarr/api/v1/indexer → [{ id, name, enable, protocol }]`);
-          endpointDocs.push(`  /api/proxy/prowlarr/api/v1/indexerstats → [{ ... }]`);
           break;
         case 'bazarr':
           endpointDocs.push(`  /api/proxy/bazarr/api/system/status → { ... }`);
-          endpointDocs.push(`  /api/proxy/bazarr/api/episodes/wanted → { data: [...] }`);
           break;
         case 'seerr':
-          endpointDocs.push(`  /api/proxy/seerr/api/v1/request?take=20 → { results: [{ type, media: {tmdbId, status}, requestedBy: {displayName} }] }`);
-          endpointDocs.push(`  /api/proxy/seerr/api/v1/request/count → { total, movie, tv, pending, approved, ... }`);
+          endpointDocs.push(`  /api/proxy/seerr/api/v1/request?take=20 → { results: [...] }`);
           break;
         case 'lidarr':
           endpointDocs.push(`  /api/proxy/lidarr/api/v1/queue → { records: [...] }`);
-          endpointDocs.push(`  /api/proxy/lidarr/api/v1/artist → [{ artistName, ... }]`);
           break;
         case 'readarr':
           endpointDocs.push(`  /api/proxy/readarr/api/v1/queue → { records: [...] }`);
-          endpointDocs.push(`  /api/proxy/readarr/api/v1/book → [{ title, ... }]`);
           break;
         case 'homeassistant':
-          endpointDocs.push(`  /api/proxy/homeassistant/api/states → [{ entity_id, state, attributes, last_changed }]`);
-          endpointDocs.push(`  /api/proxy/homeassistant/api/ → { message: "API running." }`);
+          endpointDocs.push(`  /api/proxy/homeassistant/api/states → [{ entity_id, state, attributes }]`);
           break;
         default:
-          endpointDocs.push(`  Use the integration's REST API through /api/proxy/${id}/...`);
+          endpointDocs.push(`  Use /api/proxy/${id}/... for this integration's API`);
           break;
       }
       endpointDocs.push('');
@@ -350,18 +332,12 @@ async function buildIntegrationEndpoints(): Promise<string> {
 
     return endpointDocs.join('\n');
   } catch {
-    return `Use commandarr.fetch('/api/integrations') to discover available integrations, then use /api/proxy/{integrationId}/... to access their APIs.`;
+    return `Use commandarr.fetch('/api/integrations') to discover available integrations.`;
   }
 }
 
 // ─── Field Sanitization ──────────────────────────────────────────────
 
-/**
- * Fix over-escaped quotes that LLMs produce inside JSON string values.
- * When the LLM generates {"html": "<div class=\"foo\">"}, JSON.parse gives <div class="foo">
- * But some LLMs double-escape: {"html": "<div class=\\\"foo\\\">"} → <div class=\"foo\"> after parse
- * This function fixes those leftover escaped quotes in HTML/CSS content.
- */
 function repairEscapedContent(s: string): string {
   return s.replace(/\\"/g, '"').replace(/\\'/g, "'");
 }
@@ -381,137 +357,18 @@ function sanitizeHtml(html: string): string {
 
 function sanitizeCss(css: string): string {
   return repairEscapedContent(
-    css
-      .replace(/<\/?style[^>]*>/gi, '')
-      .trim()
+    css.replace(/<\/?style[^>]*>/gi, '').trim()
   );
 }
 
 function sanitizeJs(js: string): string {
-  // Note: do NOT repair escaped quotes in JS — they may be intentional string escapes
-  return js
-    .replace(/<\/?script[^>]*>/gi, '')
-    .trim();
-}
-
-// ─── JSON Extraction ─────────────────────────────────────────────────
-
-/**
- * Find a balanced JSON object starting from a given position.
- * Handles nested braces and quoted strings correctly.
- */
-function findBalancedJson(text: string, startIdx: number): string | null {
-  if (text[startIdx] !== '{') return null;
-  let depth = 0;
-  let inString = false;
-  let escape = false;
-
-  for (let i = startIdx; i < text.length; i++) {
-    const ch = text[i];
-
-    if (escape) {
-      escape = false;
-      continue;
-    }
-
-    if (ch === '\\' && inString) {
-      escape = true;
-      continue;
-    }
-
-    if (ch === '"' && !escape) {
-      inString = !inString;
-      continue;
-    }
-
-    if (inString) continue;
-
-    if (ch === '{') depth++;
-    else if (ch === '}') {
-      depth--;
-      if (depth === 0) {
-        return text.substring(startIdx, i + 1);
-      }
-    }
-  }
-
-  return null;
-}
-
-function extractJson(raw: string): unknown {
-  // Try raw JSON parse first
-  try {
-    return JSON.parse(raw);
-  } catch { /* continue */ }
-
-  // Try each markdown code fence individually (there may be multiple)
-  const fenceRegex = /```(?:json)?\s*\n([\s\S]*?)\n```/g;
-  let fenceMatch;
-  while ((fenceMatch = fenceRegex.exec(raw)) !== null) {
-    const content = fenceMatch[1]!.trim();
-    try {
-      return JSON.parse(content);
-    } catch { /* continue */ }
-    // Try balanced brace extraction within the fence
-    const braceIdx = content.indexOf('{');
-    if (braceIdx !== -1) {
-      const balanced = findBalancedJson(content, braceIdx);
-      if (balanced) {
-        try {
-          return JSON.parse(balanced);
-        } catch { /* continue */ }
-      }
-    }
-  }
-
-  // Try to find each top-level JSON object in the raw text using balanced brace matching
-  let searchFrom = 0;
-  while (searchFrom < raw.length) {
-    const braceIdx = raw.indexOf('{', searchFrom);
-    if (braceIdx === -1) break;
-
-    const balanced = findBalancedJson(raw, braceIdx);
-    if (balanced && balanced.length > 100) {
-      // Only try objects that are large enough to be a widget definition
-      try {
-        const parsed = JSON.parse(balanced);
-        // Verify it looks like a widget (has html or js field)
-        if (parsed && typeof parsed === 'object' && ('html' in parsed || 'js' in parsed)) {
-          return parsed;
-        }
-      } catch { /* continue */ }
-    }
-
-    searchFrom = braceIdx + 1;
-  }
-
-  throw new Error('Could not extract JSON from LLM response');
-}
-
-// ─── Legacy HTML Extraction (for backward compat) ────────────────────
-
-function extractHtml(raw: string): string {
-  const fenceMatch = raw.match(/```(?:html)?\s*\n([\s\S]*?)\n```/);
-  if (fenceMatch) return fenceMatch[1]!.trim();
-
-  const doctypeIdx = raw.indexOf('<!DOCTYPE');
-  const htmlIdx = raw.indexOf('<html');
-  const startIdx = doctypeIdx !== -1 ? doctypeIdx : htmlIdx;
-
-  if (startIdx !== -1) {
-    const endIdx = raw.lastIndexOf('</html>');
-    if (endIdx !== -1) return raw.substring(startIdx, endIdx + 7);
-    return raw.substring(startIdx);
-  }
-
-  return raw;
+  return js.replace(/<\/?script[^>]*>/gi, '').trim();
 }
 
 // ─── Validation ──────────────────────────────────────────────────────
 
 function validateJsSyntax(js: string): string | null {
   try {
-    // Use Function constructor to check syntax (does not execute)
     new Function(js);
     return null;
   } catch (e) {
@@ -519,25 +376,7 @@ function validateJsSyntax(js: string): string | null {
   }
 }
 
-// ─── Auto-Continuation ──────────────────────────────────────────────
-
-/**
- * Detect if the LLM output was likely truncated (incomplete JSON).
- */
-function isLikelyTruncated(raw: string): boolean {
-  const trimmed = raw.trim();
-  // If it doesn't end with }, the JSON is likely truncated
-  if (!trimmed.endsWith('}')) return true;
-  // Try to parse — if it fails, it's truncated
-  try {
-    extractJson(raw);
-    return false;
-  } catch {
-    return true;
-  }
-}
-
-// ─── Generate Widget ─────────────────────────────────────────────────
+// ─── Generate Widget (via Tool Call) ─────────────────────────────────
 
 export async function generateWidget(prompt: string, name?: string): Promise<{
   id: string;
@@ -565,37 +404,20 @@ export async function generateWidget(prompt: string, name?: string): Promise<{
     maxTokens: WIDGET_MAX_OUTPUT_TOKENS,
   };
 
-  // Phase 1: Generate with auto-continuation for truncated outputs
-  let raw = '';
-  const stream = chatWithFallback(messages, undefined, chatOptions);
+  // Use the create_widget tool — the LLM returns structured JSON via tool calling
+  let toolCallArgs: string | null = null;
+  let textFallback = '';
+
+  const stream = chatWithFallback(messages, [CREATE_WIDGET_TOOL], chatOptions);
   for await (const chunk of stream) {
-    if (chunk.type === 'text' && chunk.text) raw += chunk.text;
+    if (chunk.type === 'tool_call' && chunk.toolCall?.function.name === 'create_widget') {
+      toolCallArgs = chunk.toolCall.function.arguments;
+    }
+    if (chunk.type === 'text' && chunk.text) textFallback += chunk.text;
     if (chunk.type === 'error') throw new Error(chunk.error || 'LLM error');
   }
 
-  // Auto-continue if output was truncated
-  for (let i = 0; i < WIDGET_MAX_AUTO_CONTINUATIONS; i++) {
-    if (!isLikelyTruncated(raw)) break;
-
-    logger.info('widget', `Output appears truncated, auto-continuing (attempt ${i + 1}/${WIDGET_MAX_AUTO_CONTINUATIONS})`);
-
-    const continuationMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-      ...messages,
-      { role: 'assistant', content: raw },
-      { role: 'user', content: 'Your JSON output was truncated. Continue from exactly where you left off. Do not repeat any content — just output the remaining characters to complete the JSON object.' },
-    ];
-
-    let continuation = '';
-    const contStream = chatWithFallback(continuationMessages, undefined, chatOptions);
-    for await (const chunk of contStream) {
-      if (chunk.type === 'text' && chunk.text) continuation += chunk.text;
-      if (chunk.type === 'error') break;
-    }
-
-    raw += continuation;
-  }
-
-  // Phase 2: Parse — try structured JSON first, fall back to HTML extraction
+  // Parse widget data — prefer tool call, fall back to text extraction
   let widgetData: {
     name: string;
     description: string;
@@ -607,48 +429,52 @@ export async function generateWidget(prompt: string, name?: string): Promise<{
     summary: string;
   };
 
-  try {
-    const parsed = extractJson(raw);
-    const validated = GeneratedWidgetSchema.parse(parsed);
-    validated.html = sanitizeHtml(validated.html);
-    validated.css = sanitizeCss(validated.css);
-    validated.js = sanitizeJs(validated.js);
-    widgetData = validated;
-  } catch (jsonError) {
-    // Fall back to HTML extraction for backward compatibility
-    logger.warn('widget', 'Failed to parse structured JSON, falling back to HTML extraction', {
-      error: jsonError instanceof Error ? jsonError.message : String(jsonError),
-    });
-
-    const html = extractHtml(raw);
-    widgetData = {
-      name: name || `Widget ${new Date().toLocaleDateString()}`,
-      description: prompt.substring(0, 96),
-      capabilities: ['context'],
-      controls: [{ id: 'refresh', label: 'Refresh', kind: 'button', parameters: [], execution: { kind: 'state', patch: {} } }],
-      html,
-      css: '',
-      js: '',
-      summary: prompt.substring(0, 320),
-    };
+  if (toolCallArgs) {
+    // Tool call path — the API already parsed the JSON for us
+    logger.info('widget', 'Widget generated via tool call (structured output)');
+    try {
+      const parsed = JSON.parse(toolCallArgs);
+      const validated = GeneratedWidgetSchema.parse(parsed);
+      validated.html = sanitizeHtml(validated.html);
+      validated.css = sanitizeCss(validated.css);
+      validated.js = sanitizeJs(validated.js);
+      widgetData = validated;
+    } catch (e) {
+      logger.warn('widget', 'Tool call args failed validation, trying raw parse', {
+        error: e instanceof Error ? e.message : String(e),
+      });
+      // Try parsing the raw tool call args without strict validation
+      const parsed = JSON.parse(toolCallArgs);
+      widgetData = {
+        name: parsed.name || name || 'Widget',
+        description: parsed.description || prompt.substring(0, 96),
+        capabilities: parsed.capabilities || ['context'],
+        controls: parsed.controls || [{ id: 'refresh', label: 'Refresh', kind: 'button', parameters: [], execution: { kind: 'state', patch: {} } }],
+        html: sanitizeHtml(parsed.html || ''),
+        css: sanitizeCss(parsed.css || ''),
+        js: sanitizeJs(parsed.js || ''),
+        summary: parsed.summary || '',
+      };
+    }
+  } else if (textFallback) {
+    // Text fallback — some providers don't support tool calling
+    logger.warn('widget', 'No tool call received, falling back to text extraction');
+    widgetData = extractFromText(textFallback, prompt, name);
+  } else {
+    throw new Error('LLM returned no tool call and no text');
   }
 
-  // Phase 3: Validate JS syntax if separate
+  // Validate JS syntax
   if (widgetData.js) {
     const jsError = validateJsSyntax(widgetData.js);
     if (jsError) {
-      // Try to repair
       logger.warn('widget', `JS syntax error: ${jsError}, attempting repair`);
       const repaired = await repairJs(widgetData.js, jsError);
-      if (repaired) {
-        widgetData.js = repaired;
-      } else {
-        logger.warn('widget', 'JS repair failed, keeping original');
-      }
+      if (repaired) widgetData.js = repaired;
     }
   }
 
-  // Phase 4: Store
+  // Store
   const widgetName = name || widgetData.name;
   const id = nanoid();
   const slug = widgetName.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
@@ -673,7 +499,6 @@ export async function generateWidget(prompt: string, name?: string): Promise<{
     updatedAt: new Date(),
   });
 
-  // Initialize runtime state
   await db.insert(widgetState).values({
     widgetId: id,
     stateJson: '{}',
@@ -696,6 +521,91 @@ export async function generateWidget(prompt: string, name?: string): Promise<{
   };
 }
 
+// ─── Text Fallback Extraction ────────────────────────────────────────
+
+function extractFromText(raw: string, prompt: string, name?: string): {
+  name: string;
+  description: string;
+  capabilities: string[];
+  controls: unknown[];
+  html: string;
+  css: string;
+  js: string;
+  summary: string;
+} {
+  // Try JSON extraction from text as fallback
+  try {
+    const parsed = findAndParseJson(raw);
+    if (parsed && typeof parsed === 'object' && ('html' in parsed || 'js' in parsed)) {
+      const validated = GeneratedWidgetSchema.parse(parsed);
+      validated.html = sanitizeHtml(validated.html);
+      validated.css = sanitizeCss(validated.css);
+      validated.js = sanitizeJs(validated.js);
+      return validated;
+    }
+  } catch { /* continue */ }
+
+  // Last resort — should rarely happen
+  logger.warn('widget', 'Could not extract widget from text, creating empty widget');
+  return {
+    name: name || `Widget ${new Date().toLocaleDateString()}`,
+    description: prompt.substring(0, 96),
+    capabilities: ['context'],
+    controls: [{ id: 'refresh', label: 'Refresh', kind: 'button', parameters: [], execution: { kind: 'state', patch: {} } }],
+    html: '<div style="padding:24px;text-align:center;color:#6a6a8a;">Widget generation failed. Please try again.</div>',
+    css: '',
+    js: 'commandarr.ready();',
+    summary: 'Generation failed — placeholder widget',
+  };
+}
+
+function findAndParseJson(raw: string): unknown {
+  // Try raw parse
+  try { return JSON.parse(raw); } catch { /* continue */ }
+
+  // Try code fences
+  const fenceRegex = /```(?:json)?\s*\n([\s\S]*?)\n```/g;
+  let match;
+  while ((match = fenceRegex.exec(raw)) !== null) {
+    try { return JSON.parse(match[1]!.trim()); } catch { /* continue */ }
+  }
+
+  // Try balanced brace matching
+  let pos = 0;
+  while (pos < raw.length) {
+    const idx = raw.indexOf('{', pos);
+    if (idx === -1) break;
+    const balanced = findBalancedJson(raw, idx);
+    if (balanced && balanced.length > 100) {
+      try { return JSON.parse(balanced); } catch { /* continue */ }
+    }
+    pos = idx + 1;
+  }
+
+  throw new Error('No JSON found');
+}
+
+function findBalancedJson(text: string, startIdx: number): string | null {
+  if (text[startIdx] !== '{') return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = startIdx; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\' && inString) { escape = true; continue; }
+    if (ch === '"' && !escape) { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return text.substring(startIdx, i + 1);
+    }
+  }
+  return null;
+}
+
 // ─── JS Repair ───────────────────────────────────────────────────────
 
 async function repairJs(js: string, error: string): Promise<string | null> {
@@ -705,7 +615,7 @@ async function repairJs(js: string, error: string): Promise<string | null> {
     const messages: Array<{ role: 'system' | 'user'; content: string }> = [
       {
         role: 'system',
-        content: 'You are a JavaScript syntax fixer. You receive broken JavaScript and a syntax error. Return ONLY the fixed JavaScript code, nothing else. No markdown fences, no explanation.',
+        content: 'You are a JavaScript syntax fixer. Return ONLY the fixed JavaScript code, nothing else. No markdown fences, no explanation.',
       },
       {
         role: 'user',
@@ -719,20 +629,17 @@ async function repairJs(js: string, error: string): Promise<string | null> {
       if (chunk.type === 'text' && chunk.text) repaired += chunk.text;
     }
 
-    // Strip markdown fences if present
     const fenceMatch = repaired.match(/```(?:javascript|js)?\s*\n([\s\S]*?)\n```/);
     if (fenceMatch) repaired = fenceMatch[1]!.trim();
 
-    const checkError = validateJsSyntax(repaired);
-    if (checkError) return null;
-
+    if (validateJsSyntax(repaired)) return null;
     return repaired;
   } catch {
     return null;
   }
 }
 
-// ─── Update Widget (regenerate) ──────────────────────────────────────
+// ─── Update Widget (via Tool Call) ──────────────────────────────────
 
 export async function updateWidget(widgetId: string, prompt: string): Promise<{
   id: string;
@@ -766,51 +673,49 @@ export async function updateWidget(widgetId: string, prompt: string): Promise<{
     maxTokens: WIDGET_MAX_OUTPUT_TOKENS,
   };
 
-  let raw = '';
-  const stream = chatWithFallback(messages, undefined, chatOptions);
+  let toolCallArgs: string | null = null;
+  let textFallback = '';
+
+  const stream = chatWithFallback(messages, [CREATE_WIDGET_TOOL], chatOptions);
   for await (const chunk of stream) {
-    if (chunk.type === 'text' && chunk.text) raw += chunk.text;
-    if (chunk.type === 'error') throw new Error(chunk.error || 'LLM error');
-  }
-
-  // Auto-continue if truncated
-  for (let i = 0; i < WIDGET_MAX_AUTO_CONTINUATIONS; i++) {
-    if (!isLikelyTruncated(raw)) break;
-
-    logger.info('widget', `Update output truncated, auto-continuing (attempt ${i + 1})`);
-
-    const continuationMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
-      ...messages,
-      { role: 'assistant', content: raw },
-      { role: 'user', content: 'Your JSON output was truncated. Continue from exactly where you left off. Do not repeat any content.' },
-    ];
-
-    let continuation = '';
-    const contStream = chatWithFallback(continuationMessages, undefined, chatOptions);
-    for await (const chunk of contStream) {
-      if (chunk.type === 'text' && chunk.text) continuation += chunk.text;
-      if (chunk.type === 'error') break;
+    if (chunk.type === 'tool_call' && chunk.toolCall?.function.name === 'create_widget') {
+      toolCallArgs = chunk.toolCall.function.arguments;
     }
-
-    raw += continuation;
+    if (chunk.type === 'text' && chunk.text) textFallback += chunk.text;
+    if (chunk.type === 'error') throw new Error(chunk.error || 'LLM error');
   }
 
   let html: string, css: string, js: string;
   let controls: unknown[] | undefined;
   let capabilities: string[] | undefined;
 
-  try {
-    const parsed = extractJson(raw);
-    const validated = GeneratedWidgetSchema.parse(parsed);
-    html = sanitizeHtml(validated.html);
-    css = sanitizeCss(validated.css);
-    js = sanitizeJs(validated.js);
-    controls = validated.controls;
-    capabilities = validated.capabilities;
-  } catch {
-    html = extractHtml(raw);
-    css = '';
-    js = '';
+  if (toolCallArgs) {
+    const parsed = JSON.parse(toolCallArgs);
+    html = sanitizeHtml(parsed.html || '');
+    css = sanitizeCss(parsed.css || '');
+    js = sanitizeJs(parsed.js || '');
+    controls = parsed.controls;
+    capabilities = parsed.capabilities;
+  } else if (textFallback) {
+    try {
+      const parsed = findAndParseJson(textFallback);
+      if (parsed && typeof parsed === 'object') {
+        const p = parsed as any;
+        html = sanitizeHtml(p.html || '');
+        css = sanitizeCss(p.css || '');
+        js = sanitizeJs(p.js || '');
+        controls = p.controls;
+        capabilities = p.capabilities;
+      } else {
+        throw new Error('Invalid');
+      }
+    } catch {
+      html = '<div style="padding:24px;text-align:center;color:#6a6a8a;">Update failed. Please try again.</div>';
+      css = '';
+      js = 'commandarr.ready();';
+    }
+  } else {
+    throw new Error('LLM returned no tool call and no text');
   }
 
   const newRevision = (widget.revision ?? 1) + 1;
