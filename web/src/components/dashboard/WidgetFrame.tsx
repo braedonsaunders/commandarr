@@ -251,8 +251,10 @@ function buildBridgeScript(
     theme: 'dark',
   });
 
-  return `<script>
-(function() {
+  const CLOSE_SCRIPT = '<' + '/script>';
+
+  return '<script>\n' +
+`(function() {
   var pending = new Map();
   var nextId = 0;
   var bootstrap = ${bootstrap};
@@ -325,8 +327,7 @@ function buildBridgeScript(
       }
     }
   });
-})();
-<\\/script>`;
+})();\n` + CLOSE_SCRIPT;
 }
 
 function buildWidgetDocument(
@@ -352,22 +353,27 @@ function buildWidgetDocument(
     ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
   `;
 
-  return `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data: https:; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
-${bridgeScript}
-<style>${baseStyles}${css ? '\n' + css : ''}</style>
-</head>
-<body>
-${html}
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-${js}
-});
-</script>
-</body>
-</html>`;
+  const CLOSE_SCRIPT = '<' + '/script>';
+
+  // Sanitize widget JS — prevent </script> from closing the block prematurely
+  const safeJs = js.replace(/<\/script/gi, '<\\/script');
+
+  return '<!DOCTYPE html>\n' +
+    '<html lang="en">\n' +
+    '<head>\n' +
+    '<meta charset="utf-8">\n' +
+    '<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
+    '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data: https:; style-src \'unsafe-inline\'; script-src \'unsafe-inline\';">\n' +
+    bridgeScript + '\n' +
+    '<style>' + baseStyles + (css ? '\n' + css : '') + '</style>\n' +
+    '</head>\n' +
+    '<body>\n' +
+    html + '\n' +
+    '<script>\n' +
+    'document.addEventListener(\'DOMContentLoaded\', function() {\n' +
+    safeJs + '\n' +
+    '});\n' +
+    CLOSE_SCRIPT + '\n' +
+    '</body>\n' +
+    '</html>';
 }
