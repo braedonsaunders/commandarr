@@ -17,9 +17,9 @@ One command. It handles everything — installs, updates, configures Docker, set
 curl -fsSL https://raw.githubusercontent.com/braedonsaunders/commandarr/main/install.sh | bash
 ```
 
-**Windows** (PowerShell):
+**Windows** (PowerShell as Admin):
 ```powershell
-irm https://raw.githubusercontent.com/braedonsaunders/commandarr/main/install.ps1 | iex
+iwr https://raw.githubusercontent.com/braedonsaunders/commandarr/main/install.ps1 -OutFile install.ps1; powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
 The installer will:
