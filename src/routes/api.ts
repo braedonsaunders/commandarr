@@ -8,6 +8,12 @@ import {
   automations,
   automationRuns,
   widgets,
+  widgetState,
+  dashboardPages,
+  dashboardPageItems,
+  widgetOperationRuns,
+  widgetAutomations,
+  widgetAutomationRuns,
   llmProviders,
   settings,
   auditLog,
@@ -298,15 +304,27 @@ api.get('/automations/:id/runs', async (c) => {
 
 // ──────────────────────────── Widgets ────────────────────────────
 
+function parseWidgetRow(w: typeof widgets.$inferSelect) {
+  return {
+    ...w,
+    capabilities: w.capabilities ? JSON.parse(w.capabilities) : ['context'],
+    controls: w.controls ? JSON.parse(w.controls) : [],
+    position: w.position ? JSON.parse(w.position) : null,
+  };
+}
+
 api.get('/widgets', async (c) => {
   const db = await getDb();
   const all = await db.select().from(widgets).orderBy(desc(widgets.createdAt));
-  return c.json(
-    all.map((w) => ({
-      ...w,
-      position: w.position ? JSON.parse(w.position) : null,
-    })),
-  );
+  return c.json(all.map(parseWidgetRow));
+});
+
+api.get('/widgets/:id', async (c) => {
+  const id = c.req.param('id');
+  const db = await getDb();
+  const [widget] = await db.select().from(widgets).where(eq(widgets.id, id));
+  if (!widget) return c.json({ error: 'Widget not found' }, 404);
+  return c.json(parseWidgetRow(widget));
 });
 
 api.post('/widgets', async (c) => {
@@ -325,19 +343,36 @@ api.put('/widgets/:id', async (c) => {
   const body = await c.req.json();
   const db = await getDb();
 
+  const [existing] = await db.select().from(widgets).where(eq(widgets.id, id));
+  if (!existing) return c.json({ error: 'Widget not found' }, 404);
+
   const updateData: Record<string, unknown> = { updatedAt: new Date() };
   if (body.name !== undefined) updateData.name = body.name;
+  if (body.description !== undefined) updateData.description = body.description;
+  if (body.slug !== undefined) updateData.slug = body.slug;
+  if (body.status !== undefined) updateData.status = body.status;
   if (body.html !== undefined) updateData.html = body.html;
+  if (body.css !== undefined) updateData.css = body.css;
+  if (body.js !== undefined) updateData.js = body.js;
+  if (body.capabilities !== undefined) updateData.capabilities = JSON.stringify(body.capabilities);
+  if (body.controls !== undefined) updateData.controls = JSON.stringify(body.controls);
   if (body.position !== undefined) updateData.position = JSON.stringify(body.position);
   if (body.refreshInterval !== undefined) updateData.refreshInterval = body.refreshInterval;
 
   await db.update(widgets).set(updateData).where(eq(widgets.id, id));
-  return c.json({ success: true });
+
+  const [updated] = await db.select().from(widgets).where(eq(widgets.id, id));
+  return c.json(parseWidgetRow(updated));
 });
 
 api.delete('/widgets/:id', async (c) => {
   const id = c.req.param('id');
   const db = await getDb();
+
+  // Cascade delete related data
+  await db.delete(dashboardPageItems).where(eq(dashboardPageItems.widgetId, id));
+  await db.delete(widgetState).where(eq(widgetState.widgetId, id));
+  await db.delete(widgetOperationRuns).where(eq(widgetOperationRuns.widgetId, id));
   await db.delete(widgets).where(eq(widgets.id, id));
   return c.json({ success: true });
 });
@@ -347,9 +382,389 @@ api.post('/widgets/generate', async (c) => {
   const { generateWidget } = await import('../widgets/generator');
   try {
     const result = await generateWidget(prompt);
-    return c.json({ html: result.html });
+    return c.json({ html: result.html, css: result.css, js: result.js });
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : 'Generation failed' }, 500);
+  }
+});
+
+// ──── Widget State ────
+
+api.get('/widgets/:id/state', async (c) => {
+  const id = c.req.param('id');
+  const { getWidgetState } = await import('../widgets/controls');
+  const state = await getWidgetState(id);
+  return c.json({ state });
+});
+
+api.put('/widgets/:id/state', async (c) => {
+  const id = c.req.param('id');
+  const { state: stateData } = await c.req.json();
+  const { updateWidgetState } = await import('../widgets/controls');
+  const state = await updateWidgetState(id, stateData ?? {});
+  return c.json({ state });
+});
+
+// ──── Widget Controls ────
+
+api.get('/widgets/:id/controls', async (c) => {
+  const id = c.req.param('id');
+  const db = await getDb();
+  const [widget] = await db.select().from(widgets).where(eq(widgets.id, id));
+  if (!widget) return c.json({ error: 'Widget not found' }, 404);
+  return c.json({ controls: widget.controls ? JSON.parse(widget.controls) : [] });
+});
+
+api.post('/widgets/:id/controls', async (c) => {
+  const id = c.req.param('id');
+  const { controlId, input } = await c.req.json();
+  const db = await getDb();
+
+  const [row] = await db.select().from(widgets).where(eq(widgets.id, id));
+  if (!row) return c.json({ error: 'Widget not found' }, 404);
+
+  const widget = parseWidgetRow(row);
+  const { getWidgetControl, executeWidgetControl } = await import('../widgets/controls');
+  const control = getWidgetControl(widget, controlId);
+  if (!control) return c.json({ error: 'Control not found' }, 404);
+
+  if (control.execution.kind === 'operation' && !widget.capabilities.includes('integration-control')) {
+    return c.json({ error: 'Widget does not have integration-control capability' }, 403);
+  }
+
+  const result = await executeWidgetControl({ widget, control, inputValues: input });
+  return c.json(result, result.ok ? 200 : 409);
+});
+
+// ──── Widget Operations ────
+
+api.post('/widgets/:id/operation', async (c) => {
+  const id = c.req.param('id');
+  const body = await c.req.json();
+  const db = await getDb();
+
+  const [row] = await db.select().from(widgets).where(eq(widgets.id, id));
+  if (!row) return c.json({ error: 'Widget not found' }, 404);
+
+  const widget = parseWidgetRow(row);
+  if (!widget.capabilities.includes('integration-control')) {
+    return c.json({ error: 'Widget does not have integration-control capability' }, 403);
+  }
+
+  const { executeWidgetOperation } = await import('../widgets/operations');
+  const result = await executeWidgetOperation({ widget, operation: body.operation ?? body });
+  return c.json(result, result.ok ? 200 : 409);
+});
+
+api.get('/widgets/:id/runs', async (c) => {
+  const id = c.req.param('id');
+  const limit = parseInt(c.req.query('limit') || '20', 10);
+  const db = await getDb();
+
+  const runs = await db
+    .select()
+    .from(widgetOperationRuns)
+    .where(eq(widgetOperationRuns.widgetId, id))
+    .orderBy(desc(widgetOperationRuns.createdAt))
+    .limit(Math.min(limit, 100));
+
+  return c.json({
+    runs: runs.map((r) => ({
+      ...r,
+      operationJson: r.operationJson ? JSON.parse(r.operationJson) : {},
+      detailsJson: r.detailsJson ? JSON.parse(r.detailsJson) : {},
+    })),
+  });
+});
+
+// ──────────────────────────── Dashboard Pages ────────────────────────────
+
+api.get('/dashboard/widgets', async (c) => {
+  const db = await getDb();
+  const pages = await db.select().from(dashboardPages).orderBy(dashboardPages.sortOrder);
+  const items = await db.select().from(dashboardPageItems);
+  const allWidgets = await db.select().from(widgets);
+
+  const widgetMap = new Map(allWidgets.map((w) => [w.id, w]));
+
+  const result = pages.map((page) => ({
+    ...page,
+    items: items
+      .filter((item) => item.pageId === page.id)
+      .map((item) => {
+        const w = widgetMap.get(item.widgetId);
+        return {
+          ...item,
+          widget: w ? {
+            widgetId: w.id,
+            widgetSlug: w.slug,
+            widgetName: w.name,
+            widgetDescription: w.description,
+            widgetStatus: w.status ?? 'active',
+            widgetRevision: w.revision ?? 1,
+            capabilities: w.capabilities ? JSON.parse(w.capabilities) : ['context'],
+            updatedAt: w.updatedAt?.toISOString() ?? '',
+          } : null,
+        };
+      })
+      .filter((item) => item.widget !== null),
+  }));
+
+  // Widget inventory (all widgets not yet on any page)
+  const inventory = allWidgets
+    .filter((w) => (w.status ?? 'active') === 'active')
+    .map((w) => ({
+      widgetId: w.id,
+      widgetSlug: w.slug,
+      widgetName: w.name,
+      widgetDescription: w.description,
+      widgetStatus: w.status ?? 'active',
+      widgetRevision: w.revision ?? 1,
+      capabilities: w.capabilities ? JSON.parse(w.capabilities) : ['context'],
+      updatedAt: w.updatedAt?.toISOString() ?? '',
+    }));
+
+  return c.json({ pages: result, inventory });
+});
+
+api.post('/dashboard/widgets', async (c) => {
+  const { name } = await c.req.json();
+  const db = await getDb();
+
+  const id = nanoid();
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const allPages = await db.select().from(dashboardPages);
+  const sortOrder = allPages.length;
+
+  await db.insert(dashboardPages).values({
+    id,
+    slug,
+    name,
+    sortOrder,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  const [page] = await db.select().from(dashboardPages).where(eq(dashboardPages.id, id));
+  return c.json({ page: { ...page, items: [] } }, 201);
+});
+
+api.patch('/dashboard/widgets/pages/:pageId', async (c) => {
+  const pageId = c.req.param('pageId');
+  const body = await c.req.json();
+  const db = await getDb();
+
+  const [existing] = await db.select().from(dashboardPages).where(eq(dashboardPages.id, pageId));
+  if (!existing) return c.json({ error: 'Page not found' }, 404);
+
+  const updateData: Record<string, unknown> = { updatedAt: new Date() };
+  if (body.name !== undefined) updateData.name = body.name;
+  if (body.sortOrder !== undefined) updateData.sortOrder = body.sortOrder;
+  if (body.slug !== undefined) updateData.slug = body.slug;
+
+  await db.update(dashboardPages).set(updateData).where(eq(dashboardPages.id, pageId));
+
+  // Reorder items if provided
+  if (Array.isArray(body.itemOrder)) {
+    for (let i = 0; i < body.itemOrder.length; i++) {
+      await db.update(dashboardPageItems)
+        .set({ sortOrder: i })
+        .where(eq(dashboardPageItems.id, body.itemOrder[i]));
+    }
+  }
+
+  const [page] = await db.select().from(dashboardPages).where(eq(dashboardPages.id, pageId));
+  return c.json({ page });
+});
+
+api.delete('/dashboard/widgets/pages/:pageId', async (c) => {
+  const pageId = c.req.param('pageId');
+  const db = await getDb();
+
+  await db.delete(dashboardPageItems).where(eq(dashboardPageItems.pageId, pageId));
+  await db.delete(dashboardPages).where(eq(dashboardPages.id, pageId));
+  return c.json({ ok: true });
+});
+
+api.post('/dashboard/widgets/pages/:pageId/items', async (c) => {
+  const pageId = c.req.param('pageId');
+  const body = await c.req.json();
+  const db = await getDb();
+
+  const [page] = await db.select().from(dashboardPages).where(eq(dashboardPages.id, pageId));
+  if (!page) return c.json({ error: 'Page not found' }, 404);
+
+  const [widget] = await db.select().from(widgets).where(eq(widgets.id, body.widgetId));
+  if (!widget) return c.json({ error: 'Widget not found' }, 404);
+
+  // Auto-place if no position specified
+  let columnStart = body.columnStart;
+  let rowStart = body.rowStart;
+  const columnSpan = body.columnSpan ?? 6;
+  const rowSpan = body.rowSpan ?? 2;
+
+  if (columnStart === undefined || rowStart === undefined) {
+    const { findGridPlacement } = await import('../widgets/dashboard-grid');
+    const existingItems = await db.select().from(dashboardPageItems).where(eq(dashboardPageItems.pageId, pageId));
+    const gridItems = existingItems.map((item) => ({
+      id: item.id,
+      columnStart: item.columnStart ?? 1,
+      columnSpan: item.columnSpan ?? 6,
+      rowStart: item.rowStart ?? 1,
+      rowSpan: item.rowSpan ?? 2,
+      sortOrder: item.sortOrder ?? 0,
+      createdAt: item.createdAt?.toISOString() ?? '',
+    }));
+    const placement = findGridPlacement(gridItems, columnSpan, rowSpan);
+    columnStart = placement.columnStart;
+    rowStart = placement.rowStart;
+  }
+
+  const id = nanoid();
+  await db.insert(dashboardPageItems).values({
+    id,
+    pageId,
+    widgetId: body.widgetId,
+    title: body.title,
+    columnStart,
+    columnSpan,
+    rowStart,
+    rowSpan,
+    sortOrder: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  const [item] = await db.select().from(dashboardPageItems).where(eq(dashboardPageItems.id, id));
+  return c.json({ item }, 201);
+});
+
+api.patch('/dashboard/widgets/items/:itemId', async (c) => {
+  const itemId = c.req.param('itemId');
+  const body = await c.req.json();
+  const db = await getDb();
+
+  const [existing] = await db.select().from(dashboardPageItems).where(eq(dashboardPageItems.id, itemId));
+  if (!existing) return c.json({ error: 'Item not found' }, 404);
+
+  const updateData: Record<string, unknown> = { updatedAt: new Date() };
+  if (body.title !== undefined) updateData.title = body.title;
+  if (body.columnStart !== undefined) updateData.columnStart = body.columnStart;
+  if (body.columnSpan !== undefined) updateData.columnSpan = body.columnSpan;
+  if (body.rowStart !== undefined) updateData.rowStart = body.rowStart;
+  if (body.rowSpan !== undefined) updateData.rowSpan = body.rowSpan;
+  if (body.sortOrder !== undefined) updateData.sortOrder = body.sortOrder;
+
+  await db.update(dashboardPageItems).set(updateData).where(eq(dashboardPageItems.id, itemId));
+
+  const [updated] = await db.select().from(dashboardPageItems).where(eq(dashboardPageItems.id, itemId));
+  return c.json({ item: updated });
+});
+
+api.delete('/dashboard/widgets/items/:itemId', async (c) => {
+  const itemId = c.req.param('itemId');
+  const db = await getDb();
+
+  await db.delete(dashboardPageItems).where(eq(dashboardPageItems.id, itemId));
+  return c.json({ ok: true });
+});
+
+// ──────────────────────────── Widget Automations ────────────────────────────
+
+api.get('/widgets/:id/automations', async (c) => {
+  const widgetId = c.req.param('id');
+  const db = await getDb();
+  const autos = await db.select().from(widgetAutomations).where(eq(widgetAutomations.widgetId, widgetId));
+  return c.json(
+    autos.map((a) => ({
+      ...a,
+      inputJson: a.inputJson ? JSON.parse(a.inputJson) : {},
+    })),
+  );
+});
+
+api.post('/widgets/:id/automations', async (c) => {
+  const widgetId = c.req.param('id');
+  const body = await c.req.json();
+  const db = await getDb();
+
+  const id = nanoid();
+  const now = new Date();
+
+  await db.insert(widgetAutomations).values({
+    id,
+    widgetId,
+    controlId: body.controlId,
+    name: body.name,
+    description: body.description,
+    enabled: body.enabled ?? true,
+    scheduleKind: body.scheduleKind ?? 'manual',
+    intervalMinutes: body.intervalMinutes,
+    hourLocal: body.hourLocal,
+    minuteLocal: body.minuteLocal,
+    inputJson: body.inputJson ? JSON.stringify(body.inputJson) : '{}',
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  // Compute next run
+  if (body.enabled !== false && body.scheduleKind !== 'manual') {
+    const { computeNextRunAt } = await import('../widgets/automations');
+    const nextRunAt = computeNextRunAt({
+      enabled: true,
+      scheduleKind: body.scheduleKind,
+      intervalMinutes: body.intervalMinutes,
+      hourLocal: body.hourLocal,
+      minuteLocal: body.minuteLocal,
+      lastRunAt: undefined,
+      createdAt: now.toISOString(),
+    });
+    if (nextRunAt) {
+      await db.update(widgetAutomations).set({ nextRunAt }).where(eq(widgetAutomations.id, id));
+    }
+  }
+
+  const [auto] = await db.select().from(widgetAutomations).where(eq(widgetAutomations.id, id));
+  return c.json({ ...auto, inputJson: auto.inputJson ? JSON.parse(auto.inputJson) : {} }, 201);
+});
+
+api.patch('/widgets/:id/automations/:autoId', async (c) => {
+  const autoId = c.req.param('autoId');
+  const body = await c.req.json();
+  const db = await getDb();
+
+  const updateData: Record<string, unknown> = { updatedAt: new Date() };
+  if (body.name !== undefined) updateData.name = body.name;
+  if (body.description !== undefined) updateData.description = body.description;
+  if (body.enabled !== undefined) updateData.enabled = body.enabled;
+  if (body.scheduleKind !== undefined) updateData.scheduleKind = body.scheduleKind;
+  if (body.intervalMinutes !== undefined) updateData.intervalMinutes = body.intervalMinutes;
+  if (body.hourLocal !== undefined) updateData.hourLocal = body.hourLocal;
+  if (body.minuteLocal !== undefined) updateData.minuteLocal = body.minuteLocal;
+  if (body.inputJson !== undefined) updateData.inputJson = JSON.stringify(body.inputJson);
+
+  await db.update(widgetAutomations).set(updateData).where(eq(widgetAutomations.id, autoId));
+
+  const [auto] = await db.select().from(widgetAutomations).where(eq(widgetAutomations.id, autoId));
+  return c.json({ ...auto, inputJson: auto.inputJson ? JSON.parse(auto.inputJson) : {} });
+});
+
+api.delete('/widgets/:id/automations/:autoId', async (c) => {
+  const autoId = c.req.param('autoId');
+  const db = await getDb();
+  await db.delete(widgetAutomationRuns).where(eq(widgetAutomationRuns.automationId, autoId));
+  await db.delete(widgetAutomations).where(eq(widgetAutomations.id, autoId));
+  return c.json({ ok: true });
+});
+
+api.post('/widgets/:id/automations/:autoId/run', async (c) => {
+  const autoId = c.req.param('autoId');
+  const { runWidgetAutomation } = await import('../widgets/automations');
+  try {
+    const result = await runWidgetAutomation(autoId);
+    return c.json(result);
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : 'Failed' }, 500);
   }
 });
 

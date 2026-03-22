@@ -104,11 +104,87 @@ export interface AutomationRun {
 
 export interface Widget {
   id: string;
+  slug: string;
   name: string;
   description: string;
+  status: 'active' | 'disabled';
   html: string;
+  css: string;
+  js: string;
+  capabilities: string[];
+  controls: WidgetControl[];
+  prompt: string | null;
+  revision: number;
+  createdBy: string;
+  refreshInterval: number;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface WidgetControl {
+  id: string;
+  label: string;
+  description?: string;
+  kind: 'button' | 'toggle' | 'select' | 'form';
+  parameters: WidgetControlParameter[];
+  execution: { kind: 'operation' | 'state' };
+  confirmation?: string;
+  successMessage?: string;
+  danger?: boolean;
+}
+
+export interface WidgetControlParameter {
+  key: string;
+  label: string;
+  type: 'string' | 'number' | 'boolean' | 'enum';
+  required?: boolean;
+  defaultValue?: string | number | boolean;
+  options?: { label: string; value: string }[];
+}
+
+export interface WidgetRuntimeState {
+  widgetId: string;
+  stateJson: Record<string, unknown>;
+  updatedAt: string;
+}
+
+export interface DashboardPage {
+  id: string;
+  slug: string;
+  name: string;
+  sortOrder: number;
+  items: DashboardPageItem[];
+}
+
+export interface DashboardPageItem {
+  id: string;
+  pageId: string;
+  widgetId: string;
+  title: string | null;
+  columnStart: number;
+  columnSpan: number;
+  rowStart: number;
+  rowSpan: number;
+  sortOrder: number;
+  createdAt: string;
+  widget: {
+    widgetId: string;
+    widgetSlug: string;
+    widgetName: string;
+    widgetDescription?: string;
+    widgetStatus: string;
+    widgetRevision: number;
+    capabilities: string[];
+  };
+}
+
+export interface WidgetInventoryEntry {
+  widgetId: string;
+  widgetSlug: string;
+  widgetName: string;
+  widgetDescription?: string;
+  widgetStatus: string;
+  capabilities: string[];
 }
 
 export interface LLMProvider {
@@ -307,16 +383,39 @@ export function useWidgets() {
   });
 }
 
+export function useWidget(id: string) {
+  return useQuery({
+    queryKey: ['widgets', id],
+    queryFn: () => apiFetch<Widget>(`/widgets/${id}`),
+    enabled: !!id,
+  });
+}
+
 export function useCreateWidget() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (data: { prompt: string }) =>
+    mutationFn: (data: { prompt: string; name?: string }) =>
       apiFetch<Widget>('/widgets', {
         method: 'POST',
         body: JSON.stringify(data),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['widgets'] });
+    },
+  });
+}
+
+export function useUpdateWidget() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: string } & Partial<Widget>) =>
+      apiFetch<Widget>(`/widgets/${id}`, {
+        method: 'PUT',
+        body: JSON.stringify(data),
+      }),
+    onSuccess: (_, { id }) => {
+      qc.invalidateQueries({ queryKey: ['widgets'] });
+      qc.invalidateQueries({ queryKey: ['widgets', id] });
     },
   });
 }
@@ -328,6 +427,126 @@ export function useDeleteWidget() {
       apiFetch(`/widgets/${id}`, { method: 'DELETE' }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['widgets'] });
+      qc.invalidateQueries({ queryKey: ['dashboard-pages'] });
+    },
+  });
+}
+
+// ─── Widget State Hooks ──────────────────────────────────────────────
+
+export function useWidgetState(widgetId: string) {
+  return useQuery({
+    queryKey: ['widget-state', widgetId],
+    queryFn: () => apiFetch<{ state: WidgetRuntimeState }>(`/widgets/${widgetId}/state`),
+    enabled: !!widgetId,
+  });
+}
+
+export function useUpdateWidgetState() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ widgetId, state }: { widgetId: string; state: Record<string, unknown> }) =>
+      apiFetch<{ state: WidgetRuntimeState }>(`/widgets/${widgetId}/state`, {
+        method: 'PUT',
+        body: JSON.stringify({ state }),
+      }),
+    onSuccess: (_, { widgetId }) => {
+      qc.invalidateQueries({ queryKey: ['widget-state', widgetId] });
+    },
+  });
+}
+
+// ─── Widget Controls Hooks ───────────────────────────────────────────
+
+export function useExecuteControl() {
+  return useMutation({
+    mutationFn: ({ widgetId, controlId, input }: { widgetId: string; controlId: string; input?: Record<string, unknown> }) =>
+      apiFetch(`/widgets/${widgetId}/controls`, {
+        method: 'POST',
+        body: JSON.stringify({ controlId, input }),
+      }),
+  });
+}
+
+// ─── Widget Runs Hooks ───────────────────────────────────────────────
+
+export function useWidgetRuns(widgetId: string) {
+  return useQuery({
+    queryKey: ['widget-runs', widgetId],
+    queryFn: () => apiFetch<{ runs: unknown[] }>(`/widgets/${widgetId}/runs`),
+    enabled: !!widgetId,
+  });
+}
+
+// ─── Dashboard Page Hooks ────────────────────────────────────────────
+
+export function useDashboardPages() {
+  return useQuery({
+    queryKey: ['dashboard-pages'],
+    queryFn: () => apiFetch<{ pages: DashboardPage[]; inventory: WidgetInventoryEntry[] }>('/dashboard/widgets'),
+  });
+}
+
+export function useCreateDashboardPage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { name: string }) =>
+      apiFetch<{ page: DashboardPage }>('/dashboard/widgets', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['dashboard-pages'] });
+    },
+  });
+}
+
+export function useDeleteDashboardPage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (pageId: string) =>
+      apiFetch(`/dashboard/widgets/pages/${pageId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['dashboard-pages'] });
+    },
+  });
+}
+
+export function useAddPageItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ pageId, widgetId, columnSpan, rowSpan }: { pageId: string; widgetId: string; columnSpan?: number; rowSpan?: number }) =>
+      apiFetch(`/dashboard/widgets/pages/${pageId}/items`, {
+        method: 'POST',
+        body: JSON.stringify({ widgetId, columnSpan, rowSpan }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['dashboard-pages'] });
+    },
+  });
+}
+
+export function useUpdatePageItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ itemId, ...data }: { itemId: string; columnStart?: number; columnSpan?: number; rowStart?: number; rowSpan?: number; title?: string }) =>
+      apiFetch(`/dashboard/widgets/items/${itemId}`, {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['dashboard-pages'] });
+    },
+  });
+}
+
+export function useDeletePageItem() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (itemId: string) =>
+      apiFetch(`/dashboard/widgets/items/${itemId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['dashboard-pages'] });
     },
   });
 }
