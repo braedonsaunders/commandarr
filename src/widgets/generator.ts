@@ -6,11 +6,16 @@ import { eq } from 'drizzle-orm';
 import { GeneratedWidgetSchema } from './types';
 import type { WidgetRecord } from './types';
 
+// ─── Constants ────────────────────────────────────────────────────────
+const WIDGET_MAX_OUTPUT_TOKENS = 8192;
+const WIDGET_MAX_AUTO_CONTINUATIONS = 2;
+const WIDGET_TEMPERATURE = 0.15;
+
 // ─── System Prompt ───────────────────────────────────────────────────
 
 function buildSystemPrompt(integrationEndpoints: string): string {
-  return `You are a widget code generator for Commandarr, a media server management dashboard.
-You generate self-contained, production-quality dashboard widgets.
+  return `You are a world-class widget code generator for Commandarr, a media server management dashboard.
+You generate self-contained, production-quality, visually stunning dashboard widgets that look like professional applications.
 
 ## OUTPUT FORMAT
 
@@ -22,7 +27,7 @@ The JSON object has this exact shape:
   "description": "One-line description of what this widget shows (1-96 chars)",
   "capabilities": ["context"],
   "controls": [],
-  "html": "<div id=\\"widget\\">...</div>",
+  "html": "<div id='widget'>...</div>",
   "css": "body { ... }",
   "js": "async function load() { ... }",
   "summary": "Brief summary of what was built and why (1-320 chars)"
@@ -73,7 +78,7 @@ Each control enables the host dashboard to expose structured actions:
   "danger": false
 }
 
-A refresh control should always be: { id: "refresh", label: "Refresh", kind: "button", parameters: [], execution: { kind: "state", patch: {} } }
+A refresh control should always be: { "id": "refresh", "label": "Refresh", "kind": "button", "parameters": [], "execution": { "kind": "state", "patch": {} } }
 
 ### html (max 24KB)
 - Pure HTML markup. No <script> or <style> tags — those go in js/css fields.
@@ -86,12 +91,14 @@ A refresh control should always be: { id: "refresh", label: "Refresh", kind: "bu
 - Pure CSS rules. No <style> tags.
 - Base styles are automatically applied (dark theme, system font).
 - Your CSS is injected in a <style> block.
+- USE CSS TO ITS FULL POTENTIAL — gradients, animations, transforms, backdrop-filter, box-shadow, transitions, keyframes.
 
 ### js (max 48KB)
 - Pure JavaScript. No <script> tags.
 - Your code runs after DOMContentLoaded automatically.
 - No ES modules, no import/export, no external dependencies.
 - Use var instead of const/let for maximum compatibility.
+- Use function() {} instead of arrow functions for compatibility.
 - When building HTML strings, use single quotes for HTML attributes to avoid JSON escaping issues.
   Example: '<div class=\\'item\\'>' instead of '<div class="item">'
   Or use template approach: '<div class="item">' is fine in the js field as long as you don't nest it in another string.
@@ -161,22 +168,67 @@ setInterval(load, commandarr.config.refreshInterval);
 ## AVAILABLE DATA ENDPOINTS
 ${integrationEndpoints}
 
-## DESIGN REQUIREMENTS
+## VISUAL DESIGN REQUIREMENTS — THIS IS CRITICAL
 
-Base styles are automatically applied, but you should follow these guidelines:
-- Background: transparent (inherits from dashboard) or #1a1a2e
-- Text: #e0e0e0, secondary: #8b8ba0
+You are generating widgets for a premium, professional media management dashboard.
+Every widget must look like it belongs in a high-end commercial application.
+
+### Color Palette
+- Background: transparent (inherits from dashboard) or dark surfaces #0f0f1a, #1a1a2e, #16162a
+- Cards/panels: #1c1c32, #22223a with subtle borders #2a2a4a or #1e1e3a
+- Text primary: #f0f0f0, secondary: #a0a0c0, muted: #6a6a8a
 - Accent: #E5A00D (amber/gold)
 - Brand colors: Plex #E5A00D, Radarr #FFC230, Sonarr #35C5F4, Jellyfin #00A4DC
-- Font: system-ui, -apple-system, sans-serif (auto-applied)
-- Rounded corners: 8-12px, subtle borders: #2a2a4a
-- Smooth transitions and hover effects
-- Responsive — widget may render at any size
-- Show loading state before data arrives
-- Handle empty states gracefully
-- Handle errors gracefully with retry indication
-- Progress bars for queue/download items
-- Truncate long text with ellipsis
+- Success: #50c878, Warning: #FFC230, Error: #ef4444, Info: #35C5F4
+
+### Visual Effects (USE THESE — they make widgets look premium)
+- Glassmorphism: background: rgba(30, 30, 60, 0.6); backdrop-filter: blur(12px);
+- Gradient borders: border-image: linear-gradient(135deg, #E5A00D33, #35C5F433) 1;
+- Subtle box-shadows: box-shadow: 0 4px 24px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.05);
+- Glow effects for status indicators: box-shadow: 0 0 12px rgba(80,200,120,0.3);
+- Smooth transitions: transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+- Hover effects that slightly elevate cards: transform: translateY(-2px);
+- CSS animations for loading spinners, progress bars, etc.
+- Gradient text for headers: background: linear-gradient(135deg, #E5A00D, #FFC230); -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+- Rounded corners: 8-12px for cards, 4-6px for badges/pills
+- Use opacity and subtle color shifts for interactive states
+
+### Layout Principles
+- Use CSS Grid or Flexbox for all layouts — never use floats or absolute positioning for layout
+- Responsive — widget may render at any size from narrow sidebar to full desktop width
+- Cards should have consistent padding (12-16px) and spacing (8-12px gaps)
+- Use proper visual hierarchy: larger/bolder titles, muted secondary info
+- Group related information with subtle dividers or card boundaries
+- Truncate long text with ellipsis (text-overflow: ellipsis)
+- Use consistent spacing rhythm (4px, 8px, 12px, 16px, 24px)
+
+### Content Patterns
+- Show loading state with a styled spinner before data arrives — never blank content
+- Handle empty states with an icon + friendly message + muted subtitle
+- Handle errors gracefully with styled error cards, not raw error text
+- For lists: use styled scrollable containers with consistent row heights
+- For stats: use large bold numbers with small labels beneath
+- For progress: use gradient progress bars, not plain text percentages
+- For status: use colored dots/pills with glow effects, not plain text
+- Use emoji sparingly and only in empty states — prefer SVG icons or CSS shapes
+
+### Typography
+- Font: system-ui, -apple-system, sans-serif (auto-applied by runtime)
+- Headers: 16-18px, font-weight 600-700
+- Body: 13-14px, font-weight 400
+- Labels/badges: 10-11px, font-weight 600, letter-spacing 0.5-1px, uppercase
+- Line height: 1.4-1.6 for body text
+- Use font-weight contrast for visual hierarchy (not just size)
+
+### Professional Quality Checklist
+- Every surface should have a border, shadow, or background — no raw floating text
+- Cards must have rounded corners and padding
+- Lists must have row separators (subtle borders or alternating backgrounds)
+- Images must have border-radius, object-fit, and fallback placeholders
+- Buttons must have hover/active states
+- Numbers should be formatted (commas, units, relative time)
+- Use CSS Grid for dashboard-style stat layouts
+- Every widget must feel "complete" — no raw unstyled elements
 
 ## IMPORTANT RULES — FOLLOW EXACTLY
 - Do NOT use ES modules (import/export) — the JS runs as a plain script
@@ -189,7 +241,10 @@ Base styles are automatically applied, but you should follow these guidelines:
 - Always include a "refresh" control for data-fetching widgets
 - When building HTML strings in JS, prefer single quotes for attributes or use string concatenation
 - Handle all errors gracefully with try/catch — never let the widget crash silently
-- Test your logic mentally — make sure loops, conditionals, and string building are correct`;
+- Test your logic mentally — make sure loops, conditionals, and string building are correct
+- HTML attributes in the html field must use proper quotes, not escaped quotes (\\")
+- In the CSS field, do NOT escape quotes — write them normally
+- The widget MUST look visually impressive — plain text output is unacceptable`;
 }
 
 // ─── Integration Endpoint Discovery ──────────────────────────────────
@@ -223,14 +278,16 @@ async function buildIntegrationEndpoints(): Promise<string> {
           break;
         case 'radarr':
           endpointDocs.push(`  /api/proxy/radarr/api/v3/queue → { records: [{ title, status, sizeleft, size, timeleft, movie: {title} }] }`);
-          endpointDocs.push(`  /api/proxy/radarr/api/v3/calendar?start=YYYY-MM-DD&end=YYYY-MM-DD → [{ title, year, inCinemas, digitalRelease, overview }]`);
-          endpointDocs.push(`  /api/proxy/radarr/api/v3/movie → [{ title, year, hasFile, sizeOnDisk }]`);
+          endpointDocs.push(`  /api/proxy/radarr/api/v3/calendar?start=YYYY-MM-DD&end=YYYY-MM-DD → [{ title, year, inCinemas, digitalRelease, physicalRelease, overview, hasFile, movieFile, images: [{coverType, remoteUrl}], status }]`);
+          endpointDocs.push(`  /api/proxy/radarr/api/v3/movie → [{ title, year, hasFile, sizeOnDisk, status, images: [{coverType, remoteUrl}] }]`);
           endpointDocs.push(`  /api/proxy/radarr/api/v3/system/status → { version, ... }`);
+          endpointDocs.push(`  For movie posters: use movie.images array, find coverType='poster', use remoteUrl (TMDB URL, https)`);
           break;
         case 'sonarr':
           endpointDocs.push(`  /api/proxy/sonarr/api/v3/queue → { records: [{ title, status, sizeleft, size, timeleft, series: {title}, episode: {seasonNumber, episodeNumber, title} }] }`);
-          endpointDocs.push(`  /api/proxy/sonarr/api/v3/calendar?start=YYYY-MM-DD&end=YYYY-MM-DD → [{ series: {title}, seasonNumber, episodeNumber, title, airDateUtc }]`);
-          endpointDocs.push(`  /api/proxy/sonarr/api/v3/series → [{ title, seasons, episodeFileCount, episodeCount }]`);
+          endpointDocs.push(`  /api/proxy/sonarr/api/v3/calendar?start=YYYY-MM-DD&end=YYYY-MM-DD → [{ series: {title, images}, seasonNumber, episodeNumber, title, airDateUtc, hasFile }]`);
+          endpointDocs.push(`  /api/proxy/sonarr/api/v3/series → [{ title, seasons, episodeFileCount, episodeCount, images: [{coverType, remoteUrl}] }]`);
+          endpointDocs.push(`  For series posters: use series.images array, find coverType='poster', use remoteUrl`);
           break;
         case 'jellyfin':
           endpointDocs.push(`  /api/proxy/jellyfin/Sessions → [{ UserName, Client, DeviceName, NowPlayingItem?, PlayState? }]`);
@@ -240,7 +297,7 @@ async function buildIntegrationEndpoints(): Promise<string> {
           endpointDocs.push(`  /api/proxy/emby/Sessions → [{ UserName, Client, DeviceName, NowPlayingItem?, PlayState? }]`);
           break;
         case 'sabnzbd':
-          endpointDocs.push(`  /api/proxy/sabnzbd/api?mode=queue&output=json → { queue: { slots: [{ filename, status, percentage, timeleft, mb, mbleft }] } }`);
+          endpointDocs.push(`  /api/proxy/sabnzbd/api?mode=queue&output=json → { queue: { slots: [{ filename, status, percentage, timeleft, mb, mbleft }], speed, sizeleft, timeleft } }`);
           endpointDocs.push(`  /api/proxy/sabnzbd/api?mode=history&output=json → { history: { slots: [...] } }`);
           break;
         case 'qbittorrent':
@@ -299,11 +356,6 @@ async function buildIntegrationEndpoints(): Promise<string> {
 
 // ─── Field Sanitization ──────────────────────────────────────────────
 
-/**
- * Sanitize HTML field from LLM output.
- * Strips any <script>, <style>, <html>, <head>, <body> tags the LLM may have included
- * since those are provided by the runtime wrapper.
- */
 function sanitizeHtml(html: string): string {
   return html
     .replace(/<!doctype[^>]*>/gi, '')
@@ -315,18 +367,12 @@ function sanitizeHtml(html: string): string {
     .trim();
 }
 
-/**
- * Sanitize CSS field — strip <style> tag wrappers if the LLM included them.
- */
 function sanitizeCss(css: string): string {
   return css
     .replace(/<\/?style[^>]*>/gi, '')
     .trim();
 }
 
-/**
- * Sanitize JS field — strip <script> tag wrappers if the LLM included them.
- */
 function sanitizeJs(js: string): string {
   return js
     .replace(/<\/?script[^>]*>/gi, '')
@@ -401,6 +447,24 @@ function validateJsSyntax(js: string): string | null {
   }
 }
 
+// ─── Auto-Continuation ──────────────────────────────────────────────
+
+/**
+ * Detect if the LLM output was likely truncated (incomplete JSON).
+ */
+function isLikelyTruncated(raw: string): boolean {
+  const trimmed = raw.trim();
+  // If it doesn't end with }, the JSON is likely truncated
+  if (!trimmed.endsWith('}')) return true;
+  // Try to parse — if it fails, it's truncated
+  try {
+    extractJson(raw);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
 // ─── Generate Widget ─────────────────────────────────────────────────
 
 export async function generateWidget(prompt: string, name?: string): Promise<{
@@ -419,17 +483,44 @@ export async function generateWidget(prompt: string, name?: string): Promise<{
   const integrationEndpoints = await buildIntegrationEndpoints();
   const systemPrompt = buildSystemPrompt(integrationEndpoints);
 
-  const messages = [
-    { role: 'system' as const, content: systemPrompt },
-    { role: 'user' as const, content: prompt },
+  const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: prompt },
   ];
 
-  // Phase 1: Generate
+  const chatOptions = {
+    temperature: WIDGET_TEMPERATURE,
+    maxTokens: WIDGET_MAX_OUTPUT_TOKENS,
+  };
+
+  // Phase 1: Generate with auto-continuation for truncated outputs
   let raw = '';
-  const stream = chatWithFallback(messages);
+  const stream = chatWithFallback(messages, undefined, chatOptions);
   for await (const chunk of stream) {
     if (chunk.type === 'text' && chunk.text) raw += chunk.text;
     if (chunk.type === 'error') throw new Error(chunk.error || 'LLM error');
+  }
+
+  // Auto-continue if output was truncated
+  for (let i = 0; i < WIDGET_MAX_AUTO_CONTINUATIONS; i++) {
+    if (!isLikelyTruncated(raw)) break;
+
+    logger.info('widget', `Output appears truncated, auto-continuing (attempt ${i + 1}/${WIDGET_MAX_AUTO_CONTINUATIONS})`);
+
+    const continuationMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+      ...messages,
+      { role: 'assistant', content: raw },
+      { role: 'user', content: 'Your JSON output was truncated. Continue from exactly where you left off. Do not repeat any content — just output the remaining characters to complete the JSON object.' },
+    ];
+
+    let continuation = '';
+    const contStream = chatWithFallback(continuationMessages, undefined, chatOptions);
+    for await (const chunk of contStream) {
+      if (chunk.type === 'text' && chunk.text) continuation += chunk.text;
+      if (chunk.type === 'error') break;
+    }
+
+    raw += continuation;
   }
 
   // Phase 2: Parse — try structured JSON first, fall back to HTML extraction
@@ -539,19 +630,19 @@ async function repairJs(js: string, error: string): Promise<string | null> {
   try {
     const { chatWithFallback } = await import('../llm/router');
 
-    const messages = [
+    const messages: Array<{ role: 'system' | 'user'; content: string }> = [
       {
-        role: 'system' as const,
+        role: 'system',
         content: 'You are a JavaScript syntax fixer. You receive broken JavaScript and a syntax error. Return ONLY the fixed JavaScript code, nothing else. No markdown fences, no explanation.',
       },
       {
-        role: 'user' as const,
+        role: 'user',
         content: `Fix this JavaScript syntax error:\n\nError: ${error}\n\nCode:\n${js}`,
       },
     ];
 
     let repaired = '';
-    const stream = chatWithFallback(messages);
+    const stream = chatWithFallback(messages, undefined, { temperature: 0, maxTokens: WIDGET_MAX_OUTPUT_TOKENS });
     for await (const chunk of stream) {
       if (chunk.type === 'text' && chunk.text) repaired += chunk.text;
     }
@@ -590,19 +681,46 @@ export async function updateWidget(widgetId: string, prompt: string): Promise<{
     ? `Current widget JS:\n${widget.js}\n\nCurrent widget HTML:\n${widget.html}\n\nCurrent widget CSS:\n${widget.css}`
     : `Current widget HTML:\n${widget.html}`;
 
-  const messages = [
-    { role: 'system' as const, content: systemPrompt },
+  const messages: Array<{ role: 'system' | 'user'; content: string }> = [
+    { role: 'system', content: systemPrompt },
     {
-      role: 'user' as const,
+      role: 'user',
       content: `${existingContext}\n\nUpdate this widget with the following change: ${prompt}`,
     },
   ];
 
+  const chatOptions = {
+    temperature: WIDGET_TEMPERATURE,
+    maxTokens: WIDGET_MAX_OUTPUT_TOKENS,
+  };
+
   let raw = '';
-  const stream = chatWithFallback(messages);
+  const stream = chatWithFallback(messages, undefined, chatOptions);
   for await (const chunk of stream) {
     if (chunk.type === 'text' && chunk.text) raw += chunk.text;
     if (chunk.type === 'error') throw new Error(chunk.error || 'LLM error');
+  }
+
+  // Auto-continue if truncated
+  for (let i = 0; i < WIDGET_MAX_AUTO_CONTINUATIONS; i++) {
+    if (!isLikelyTruncated(raw)) break;
+
+    logger.info('widget', `Update output truncated, auto-continuing (attempt ${i + 1})`);
+
+    const continuationMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+      ...messages,
+      { role: 'assistant', content: raw },
+      { role: 'user', content: 'Your JSON output was truncated. Continue from exactly where you left off. Do not repeat any content.' },
+    ];
+
+    let continuation = '';
+    const contStream = chatWithFallback(continuationMessages, undefined, chatOptions);
+    for await (const chunk of contStream) {
+      if (chunk.type === 'text' && chunk.text) continuation += chunk.text;
+      if (chunk.type === 'error') break;
+    }
+
+    raw += continuation;
   }
 
   let html: string, css: string, js: string;

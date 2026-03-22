@@ -50,6 +50,11 @@ export interface StreamChunk {
   usage?: { promptTokens: number; completionTokens: number };
 }
 
+export interface ChatOptions {
+  temperature?: number;
+  maxTokens?: number;
+}
+
 export interface LLMProvider {
   id: string;
   name: string;
@@ -58,7 +63,7 @@ export interface LLMProvider {
     testPrompt?: string;
   };
   configure(config: Record<string, string>): void;
-  chat(messages: Message[], tools?: ToolDef[]): AsyncGenerator<StreamChunk>;
+  chat(messages: Message[], tools?: ToolDef[], options?: ChatOptions): AsyncGenerator<StreamChunk>;
   listModels(): Promise<Model[]>;
   supportsToolUse(): boolean;
   supportsStreaming(): boolean;

@@ -1,4 +1,4 @@
-import type { LLMProvider, Model, Message, ToolDef, StreamChunk, ToolCall } from '../provider';
+import type { LLMProvider, Model, Message, ToolDef, StreamChunk, ToolCall, ChatOptions } from '../provider';
 
 interface AnthropicContentBlock {
   type: 'text' | 'tool_use';
@@ -145,7 +145,7 @@ export class AnthropicProvider implements LLMProvider {
     }));
   }
 
-  async *chat(messages: Message[], tools?: ToolDef[]): AsyncGenerator<StreamChunk> {
+  async *chat(messages: Message[], tools?: ToolDef[], options?: ChatOptions): AsyncGenerator<StreamChunk> {
     if (!this.apiKey) {
       yield { type: 'error', error: 'Anthropic API key is not configured' };
       return;
@@ -155,10 +155,11 @@ export class AnthropicProvider implements LLMProvider {
 
     const body: Record<string, unknown> = {
       model: this.model,
-      max_tokens: 8192,
+      max_tokens: options?.maxTokens ?? 8192,
       messages: anthropicMessages,
       stream: true,
     };
+    if (options?.temperature !== undefined) body.temperature = options.temperature;
     if (system) body.system = system;
     if (tools && tools.length > 0) body.tools = this.convertTools(tools);
 

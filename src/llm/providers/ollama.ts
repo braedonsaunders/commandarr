@@ -1,4 +1,4 @@
-import type { LLMProvider, Model, Message, ToolDef, StreamChunk } from '../provider';
+import type { LLMProvider, Model, Message, ToolDef, StreamChunk, ChatOptions } from '../provider';
 
 interface OllamaMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -53,7 +53,7 @@ export class OllamaProvider implements LLMProvider {
     this.model = config.model || 'llama3.1';
   }
 
-  async *chat(messages: Message[], tools?: ToolDef[]): AsyncGenerator<StreamChunk> {
+  async *chat(messages: Message[], tools?: ToolDef[], options?: ChatOptions): AsyncGenerator<StreamChunk> {
     const ollamaMessages: OllamaMessage[] = messages.map((m) => {
       const msg: OllamaMessage = { role: m.role, content: m.content };
       if (m.tool_calls) {
@@ -72,11 +72,16 @@ export class OllamaProvider implements LLMProvider {
       return msg;
     });
 
+    const ollamaOptions: Record<string, unknown> = {};
+    if (options?.maxTokens !== undefined) ollamaOptions.num_predict = options.maxTokens;
+    if (options?.temperature !== undefined) ollamaOptions.temperature = options.temperature;
+
     const body: Record<string, unknown> = {
       model: this.model,
       messages: ollamaMessages,
       stream: true,
     };
+    if (Object.keys(ollamaOptions).length > 0) body.options = ollamaOptions;
     if (tools && tools.length > 0) {
       body.tools = tools as OllamaTool[];
     }

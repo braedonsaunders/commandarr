@@ -2,7 +2,7 @@ import { eq, desc, asc } from 'drizzle-orm';
 import { getDb } from '../db/index';
 import { llmProviders } from '../db/schema';
 import { decrypt } from '../utils/crypto';
-import type { LLMProvider, Message, ToolDef, StreamChunk } from './provider';
+import type { LLMProvider, Message, ToolDef, StreamChunk, ChatOptions } from './provider';
 import { OpenAIProvider } from './providers/openai';
 import { OpenRouterProvider } from './providers/openrouter';
 import { AnthropicProvider } from './providers/anthropic';
@@ -151,7 +151,8 @@ export function listAvailableProviderTypes(): Array<{
  */
 export async function* chatWithFallback(
   messages: Message[],
-  tools?: ToolDef[]
+  tools?: ToolDef[],
+  options?: ChatOptions
 ): AsyncGenerator<StreamChunk> {
   const enabledProviders = configuredProviders.filter((p) => p.enabled);
 
@@ -171,7 +172,7 @@ export async function* chatWithFallback(
       let hadError = false;
       const chunks: StreamChunk[] = [];
 
-      for await (const chunk of provider.chat(messages, tools)) {
+      for await (const chunk of provider.chat(messages, tools, options)) {
         if (chunk.type === 'error') {
           console.warn(
             `[LLM Router] Provider ${provider.name} error: ${chunk.error}${isLast ? '' : ', trying next provider'}`
@@ -216,13 +217,14 @@ export async function* chatWithFallback(
  */
 export async function chatWithFallbackSync(
   messages: Message[],
-  tools?: ToolDef[]
+  tools?: ToolDef[],
+  options?: ChatOptions
 ): Promise<{ text: string; toolCalls: StreamChunk['toolCall'][]; error?: string }> {
   let text = '';
   const toolCalls: StreamChunk['toolCall'][] = [];
   let error: string | undefined;
 
-  for await (const chunk of chatWithFallback(messages, tools)) {
+  for await (const chunk of chatWithFallback(messages, tools, options)) {
     switch (chunk.type) {
       case 'text':
         text += chunk.text || '';

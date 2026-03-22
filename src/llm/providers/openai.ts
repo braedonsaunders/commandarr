@@ -1,4 +1,4 @@
-import type { LLMProvider, ConfigField, Model, Message, ToolDef, StreamChunk, ToolCall } from '../provider';
+import type { LLMProvider, ConfigField, Model, Message, ToolDef, StreamChunk, ToolCall, ChatOptions } from '../provider';
 
 /**
  * Parse an SSE stream from an OpenAI-compatible API response.
@@ -92,7 +92,7 @@ export class OpenAIProvider implements LLMProvider {
     if (config.baseUrl) this.baseUrl = config.baseUrl;
   }
 
-  async *chat(messages: Message[], tools?: ToolDef[]): AsyncGenerator<StreamChunk> {
+  async *chat(messages: Message[], tools?: ToolDef[], options?: ChatOptions): AsyncGenerator<StreamChunk> {
     if (!this.apiKey) {
       yield { type: 'error', error: 'OpenAI API key is not configured' };
       return;
@@ -106,6 +106,7 @@ export class OpenAIProvider implements LLMProvider {
 
     const body: Record<string, unknown> = {
       model: this.model,
+      max_tokens: options?.maxTokens ?? 4096,
       messages: messages.map((m) => {
         const msg: Record<string, unknown> = { role: m.role, content: m.content };
         if (m.name) msg.name = m.name;
@@ -115,6 +116,7 @@ export class OpenAIProvider implements LLMProvider {
       }),
       stream: true,
     };
+    if (options?.temperature !== undefined) body.temperature = options.temperature;
     if (tools && tools.length > 0) body.tools = tools;
 
     let response: Response;

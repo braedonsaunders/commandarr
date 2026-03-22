@@ -1,4 +1,4 @@
-import type { LLMProvider, Model, Message, ToolDef, StreamChunk } from '../provider';
+import type { LLMProvider, Model, Message, ToolDef, StreamChunk, ChatOptions } from '../provider';
 
 interface GeminiContent {
   role: 'user' | 'model';
@@ -148,7 +148,7 @@ export class GoogleProvider implements LLMProvider {
     ];
   }
 
-  async *chat(messages: Message[], tools?: ToolDef[]): AsyncGenerator<StreamChunk> {
+  async *chat(messages: Message[], tools?: ToolDef[], options?: ChatOptions): AsyncGenerator<StreamChunk> {
     if (!this.apiKey) {
       yield { type: 'error', error: 'Google API key is not configured' };
       return;
@@ -157,6 +157,11 @@ export class GoogleProvider implements LLMProvider {
     const { systemInstruction, contents } = this.convertMessages(messages);
 
     const body: Record<string, unknown> = { contents };
+    const generationConfig: Record<string, unknown> = {
+      maxOutputTokens: options?.maxTokens ?? 8192,
+    };
+    if (options?.temperature !== undefined) generationConfig.temperature = options.temperature;
+    body.generationConfig = generationConfig;
     if (systemInstruction) body.systemInstruction = systemInstruction;
     if (tools && tools.length > 0) body.tools = this.convertTools(tools);
 

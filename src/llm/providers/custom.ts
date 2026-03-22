@@ -1,4 +1,4 @@
-import type { LLMProvider, Model, Message, ToolDef, StreamChunk } from '../provider';
+import type { LLMProvider, Model, Message, ToolDef, StreamChunk, ChatOptions } from '../provider';
 import { parseSSE } from './openai';
 
 export class CustomProvider implements LLMProvider {
@@ -45,7 +45,7 @@ export class CustomProvider implements LLMProvider {
     this.model = config.model || '';
   }
 
-  async *chat(messages: Message[], tools?: ToolDef[]): AsyncGenerator<StreamChunk> {
+  async *chat(messages: Message[], tools?: ToolDef[], options?: ChatOptions): AsyncGenerator<StreamChunk> {
     if (!this.baseUrl) {
       yield { type: 'error', error: 'Custom provider base URL is not configured' };
       return;
@@ -64,6 +64,7 @@ export class CustomProvider implements LLMProvider {
 
     const body: Record<string, unknown> = {
       model: this.model,
+      max_tokens: options?.maxTokens ?? 4096,
       messages: messages.map((m) => {
         const msg: Record<string, unknown> = { role: m.role, content: m.content };
         if (m.name) msg.name = m.name;
@@ -73,6 +74,7 @@ export class CustomProvider implements LLMProvider {
       }),
       stream: true,
     };
+    if (options?.temperature !== undefined) body.temperature = options.temperature;
     if (tools && tools.length > 0) body.tools = tools;
 
     let response: Response;
