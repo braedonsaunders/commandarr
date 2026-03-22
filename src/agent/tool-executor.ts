@@ -11,17 +11,17 @@ const builtInTools: ToolDefinition[] = [
   {
     name: 'commandarr_create_widget',
     integration: '_system',
-    description: 'Create a dashboard widget from a description. The widget will be generated as HTML/CSS/JS and saved to the dashboard. Use this when the user asks to create, make, or build a widget.',
+    description: 'Create a live dashboard widget. The widget will be auto-generated as a self-contained HTML/CSS/JS app that polls data from integrations in real-time. Use this when the user asks to create, make, or build a widget. Be very descriptive in the description - specify exactly what data to show, what layout to use, and which integrations to pull from.',
     parameters: {
       type: 'object',
       properties: {
         description: {
           type: 'string',
-          description: 'Description of the widget to create (e.g., "show Plex library sizes as a bar chart")',
+          description: 'Detailed description of the widget. Include: what data to show, which integration(s), layout preferences, refresh rate. E.g. "Show currently playing Plex streams with user name, media title, progress bar, and transcode status. Refresh every 10 seconds. Show empty state when nothing is playing."',
         },
         name: {
           type: 'string',
-          description: 'Short name for the widget',
+          description: 'Short display name for the widget (e.g. "Now Playing", "Download Queue")',
         },
       },
       required: ['description', 'name'],
@@ -33,15 +33,67 @@ const builtInTools: ToolDefinition[] = [
         const widget = await generateWidget(params.description, params.name);
         return {
           success: true,
-          message: `Widget "${widget.name}" created and added to your dashboard.`,
+          message: `Widget "${widget.name}" created and added to your dashboard. It will auto-refresh with live data.`,
           data: { id: widget.id, name: widget.name },
         };
       } catch (e) {
-        return {
-          success: false,
-          message: `Failed to create widget: ${e instanceof Error ? e.message : 'Unknown error'}`,
-        };
+        return { success: false, message: `Failed to create widget: ${e instanceof Error ? e.message : 'Unknown error'}` };
       }
+    },
+  },
+  {
+    name: 'commandarr_update_widget',
+    integration: '_system',
+    description: 'Update an existing dashboard widget. Use this when the user wants to modify, change, or improve a widget they already have.',
+    parameters: {
+      type: 'object',
+      properties: {
+        widget_id: {
+          type: 'string',
+          description: 'The ID of the widget to update. Use commandarr_list_widgets first to find the ID.',
+        },
+        changes: {
+          type: 'string',
+          description: 'Description of what to change (e.g. "add a progress bar", "change the refresh rate to 5 seconds", "show poster images")',
+        },
+      },
+      required: ['widget_id', 'changes'],
+    },
+    ui: { category: 'System', dangerLevel: 'low', testable: false },
+    handler: async (params) => {
+      const { updateWidget } = await import('../widgets/generator');
+      try {
+        const widget = await updateWidget(params.widget_id, params.changes);
+        return {
+          success: true,
+          message: `Widget "${widget.name}" updated successfully.`,
+          data: { id: widget.id, name: widget.name },
+        };
+      } catch (e) {
+        return { success: false, message: `Failed to update widget: ${e instanceof Error ? e.message : 'Unknown error'}` };
+      }
+    },
+  },
+  {
+    name: 'commandarr_list_widgets',
+    integration: '_system',
+    description: 'List all dashboard widgets with their IDs and names. Use this to find a widget ID before updating it.',
+    parameters: {
+      type: 'object',
+      properties: {},
+    },
+    ui: { category: 'System', dangerLevel: 'low', testable: true },
+    handler: async () => {
+      const { listWidgets } = await import('../widgets/generator');
+      const widgetList = await listWidgets();
+      if (widgetList.length === 0) {
+        return { success: true, message: 'No widgets on the dashboard yet.', data: [] };
+      }
+      return {
+        success: true,
+        message: `Found ${widgetList.length} widget(s) on the dashboard.`,
+        data: widgetList,
+      };
     },
   },
 ];

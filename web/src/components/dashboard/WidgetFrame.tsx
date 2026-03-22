@@ -88,6 +88,10 @@ export function WidgetFrame({
           }
         }, 30000);
       });
+    },
+    config: {
+      refreshInterval: 15000,
+      theme: 'dark'
     }
   };
   window.addEventListener('message', function(e) {
