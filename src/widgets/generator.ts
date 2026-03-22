@@ -356,24 +356,39 @@ async function buildIntegrationEndpoints(): Promise<string> {
 
 // ─── Field Sanitization ──────────────────────────────────────────────
 
+/**
+ * Fix over-escaped quotes that LLMs produce inside JSON string values.
+ * When the LLM generates {"html": "<div class=\"foo\">"}, JSON.parse gives <div class="foo">
+ * But some LLMs double-escape: {"html": "<div class=\\\"foo\\\">"} → <div class=\"foo\"> after parse
+ * This function fixes those leftover escaped quotes in HTML/CSS content.
+ */
+function repairEscapedContent(s: string): string {
+  return s.replace(/\\"/g, '"').replace(/\\'/g, "'");
+}
+
 function sanitizeHtml(html: string): string {
-  return html
-    .replace(/<!doctype[^>]*>/gi, '')
-    .replace(/<\/?html[^>]*>/gi, '')
-    .replace(/<\/?head[^>]*>/gi, '')
-    .replace(/<\/?body[^>]*>/gi, '')
-    .replace(/<script[\s\S]*?<\/script>/gi, '')
-    .replace(/<style[\s\S]*?<\/style>/gi, '')
-    .trim();
+  return repairEscapedContent(
+    html
+      .replace(/<!doctype[^>]*>/gi, '')
+      .replace(/<\/?html[^>]*>/gi, '')
+      .replace(/<\/?head[^>]*>/gi, '')
+      .replace(/<\/?body[^>]*>/gi, '')
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .trim()
+  );
 }
 
 function sanitizeCss(css: string): string {
-  return css
-    .replace(/<\/?style[^>]*>/gi, '')
-    .trim();
+  return repairEscapedContent(
+    css
+      .replace(/<\/?style[^>]*>/gi, '')
+      .trim()
+  );
 }
 
 function sanitizeJs(js: string): string {
+  // Note: do NOT repair escaped quotes in JS — they may be intentional string escapes
   return js
     .replace(/<\/?script[^>]*>/gi, '')
     .trim();

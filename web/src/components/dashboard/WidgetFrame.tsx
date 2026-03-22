@@ -331,6 +331,21 @@ function buildBridgeScript(
 })();\n` + CLOSE_SCRIPT;
 }
 
+/**
+ * Fix over-escaped quotes that LLMs sometimes produce in HTML/CSS/JS.
+ * When LLMs generate JSON with HTML inside, they sometimes double-escape quotes,
+ * leaving literal \" or \' in the output after JSON parsing.
+ */
+function repairEscapedContent(s: string): string {
+  // Fix \" → " (common LLM over-escaping in HTML attributes)
+  // But be careful not to break JS string escapes — only fix in HTML/attribute contexts
+  return s.replace(/\\"/g, '"').replace(/\\'/g, "'");
+}
+
+function escapeInlineScript(value: string): string {
+  return value.replace(/<\/script/gi, '<\\/script');
+}
+
 function buildWidgetDocument(
   html: string,
   css: string,
@@ -345,36 +360,48 @@ function buildWidgetDocument(
     return `${bridgeScript}${html}`;
   }
 
-  // Build a proper document from separate html/css/js fields
-  const baseStyles = `
-    * { box-sizing: border-box; }
-    body { margin: 0; padding: 16px; background: transparent; color: #e0e0e0; font-family: system-ui, -apple-system, sans-serif; font-size: 14px; line-height: 1.5; }
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
-  `;
+  // Repair over-escaped content from LLM output
+  const cleanHtml = repairEscapedContent(html);
+  const cleanCss = repairEscapedContent(css);
+  // Don't repair JS — escaped quotes are valid in JavaScript strings
 
-  const CLOSE_SCRIPT = '<' + '/script>';
+  const baseStyles = [
+    ':root { color-scheme: dark; }',
+    'html, body { margin: 0; padding: 0; width: 100%; min-height: 100%; background: transparent; }',
+    'body { display: flex; flex-direction: column; padding: 16px; color: #e0e0e0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 14px; line-height: 1.5; }',
+    'body > * { flex: 0 0 auto; min-width: 0; width: 100%; }',
+    '*, *::before, *::after { box-sizing: border-box; }',
+    '::-webkit-scrollbar { width: 6px; height: 6px; }',
+    '::-webkit-scrollbar-track { background: transparent; }',
+    '::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }',
+  ].join('\n');
 
-  // Sanitize widget JS — prevent </script> from closing the block prematurely
-  const safeJs = js.replace(/<\/script/gi, '<\\/script');
+  // Build document matching Steward's proven pattern:
+  // 1. Bridge script in head
+  // 2. Base + widget CSS in head
+  // 3. Widget HTML in body
+  // 4. Widget JS in separate script tag (NOT wrapped in DOMContentLoaded)
+  const parts = [
+    '<!doctype html>',
+    '<html>',
+    '<head>',
+    '<meta charset="utf-8" />',
+    '<meta name="viewport" content="width=device-width, initial-scale=1" />',
+    '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data: http: https:; style-src \'unsafe-inline\'; script-src \'unsafe-inline\'; connect-src \'none\'; base-uri \'none\'; form-action \'none\'" />',
+    bridgeScript,
+    '<style>',
+    baseStyles,
+    cleanCss,
+    '</style>',
+    '</head>',
+    '<body>',
+    cleanHtml,
+    '<script>',
+    escapeInlineScript(js),
+    '<' + '/script>',
+    '</body>',
+    '</html>',
+  ];
 
-  return '<!DOCTYPE html>\n' +
-    '<html lang="en">\n' +
-    '<head>\n' +
-    '<meta charset="utf-8">\n' +
-    '<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
-    '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data: http: https:; style-src \'unsafe-inline\'; script-src \'unsafe-inline\';">\n' +
-    bridgeScript + '\n' +
-    '<style>' + baseStyles + (css ? '\n' + css : '') + '</style>\n' +
-    '</head>\n' +
-    '<body>\n' +
-    html + '\n' +
-    '<script>\n' +
-    'document.addEventListener(\'DOMContentLoaded\', function() {\n' +
-    safeJs + '\n' +
-    '});\n' +
-    CLOSE_SCRIPT + '\n' +
-    '</body>\n' +
-    '</html>';
+  return parts.join('\n');
 }
