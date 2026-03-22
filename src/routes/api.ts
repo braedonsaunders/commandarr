@@ -26,23 +26,32 @@ export const api = new Hono();
 // ──────────────────────────── Integrations ────────────────────────────
 
 api.get('/integrations', async (c) => {
-  const { getIntegrations } = await import('../integrations/registry');
+  const { getIntegrations, getCredentials } = await import('../integrations/registry');
   const integrations = getIntegrations();
-  return c.json(integrations.map((i) => ({
-    id: i.id,
-    name: i.manifest.name,
-    description: i.manifest.description,
-    icon: i.manifest.icon,
-    color: i.manifest.color,
-    version: i.manifest.version,
-    configured: i.status !== 'unconfigured',
-    healthy: i.status === 'healthy',
-    enabled: i.enabled,
-    status: i.status,
-    toolCount: i.tools.length,
-    credentials: i.manifest.credentials,
-    webhookPath: i.manifest.webhooks?.path,
-  })));
+  const results = await Promise.all(integrations.map(async (i) => {
+    let webUrl: string | undefined;
+    if (i.status !== 'unconfigured') {
+      const creds = await getCredentials(i.id);
+      if (creds?.url) webUrl = creds.url;
+    }
+    return {
+      id: i.id,
+      name: i.manifest.name,
+      description: i.manifest.description,
+      icon: i.manifest.icon,
+      color: i.manifest.color,
+      version: i.manifest.version,
+      configured: i.status !== 'unconfigured',
+      healthy: i.status === 'healthy',
+      enabled: i.enabled,
+      status: i.status,
+      toolCount: i.tools.length,
+      credentials: i.manifest.credentials,
+      webhookPath: i.manifest.webhooks?.path,
+      webUrl,
+    };
+  }));
+  return c.json(results);
 });
 
 api.get('/integrations/:id', async (c) => {
@@ -268,6 +277,21 @@ api.get('/chat/history', async (c) => {
       messages: conv.messages ? JSON.parse(conv.messages) : [],
     })),
   );
+});
+
+api.get('/chat/history/:id', async (c) => {
+  const id = c.req.param('id');
+  const db = await getDb();
+  const [conv] = await db
+    .select()
+    .from(conversations)
+    .where(eq(conversations.id, id))
+    .limit(1);
+  if (!conv) return c.json({ error: 'Not found' }, 404);
+  return c.json({
+    ...conv,
+    messages: conv.messages ? JSON.parse(conv.messages) : [],
+  });
 });
 
 api.delete('/chat/history/:id', async (c) => {

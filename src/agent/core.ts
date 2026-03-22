@@ -140,8 +140,9 @@ export async function* processMessage(
   // Load or create conversation
   const conv = await loadConversation(conversationId, platform);
 
-  // Add user message
+  // Add user message and persist immediately so it survives conversation switches
   conv.messages.push({ role: 'user', content: message });
+  await saveConversation(conv);
 
   // Log the incoming message
   await logChat(conversationId, platform, 'user', message);

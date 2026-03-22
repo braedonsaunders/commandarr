@@ -920,9 +920,19 @@ export default function ChatPage() {
     conversationIdRef.current = conv.id;
     setSidebarOpen(false);
 
-    // Convert stored messages to ThreadMessageLike format and reload thread
-    const threadMsgs = convertToThreadMessages(conv.messages || []);
-    runtime.thread.reset(threadMsgs);
+    // Fetch fresh conversation data to pick up any messages saved during streaming
+    fetch(`/api/chat/history/${conv.id}`)
+      .then(r => r.ok ? r.json() : null)
+      .then((fresh: Conversation | null) => {
+        const messages = fresh?.messages || conv.messages || [];
+        const threadMsgs = convertToThreadMessages(messages);
+        runtime.thread.reset(threadMsgs);
+      })
+      .catch(() => {
+        // Fallback to cached data
+        const threadMsgs = convertToThreadMessages(conv.messages || []);
+        runtime.thread.reset(threadMsgs);
+      });
   }, [setConversationId, runtime]);
 
   const handleDeleteConversation = useCallback((id: string) => {

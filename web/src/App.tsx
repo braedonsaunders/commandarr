@@ -23,6 +23,7 @@ import DashboardPage from './routes/index';
 import ChatPage from './routes/chat';
 import IntegrationsPage from './routes/integrations/index';
 import IntegrationDetailPage from './routes/integrations/detail';
+import IntegrationWebUIPage from './routes/integrations/webui';
 import AutomationsPage from './routes/automations';
 import WidgetsPage from './routes/widgets';
 import SettingsPage from './routes/settings/index';
@@ -34,6 +35,7 @@ function getPageTitle(path: string): string {
   if (path === '/' || path === '') return 'Dashboard';
   if (path === '/chat') return 'Chat';
   if (path === '/integrations') return 'Integrations';
+  if (path.match(/\/webui$/)) return 'WebUI';
   if (path.startsWith('/integrations/')) return 'Integration';
   if (path === '/automations') return 'Automations';
   if (path === '/widgets') return 'Widgets';
@@ -48,6 +50,7 @@ function PageContent({ path }: { path: string }) {
   if (path === '/' || path === '') return <DashboardPage />;
   if (path === '/chat') return <ChatPage />;
   if (path === '/integrations') return <IntegrationsPage />;
+  if (path.match(/^\/integrations\/[^/]+\/webui$/)) return <IntegrationWebUIPage />;
   if (path.startsWith('/integrations/')) return <IntegrationDetailPage />;
   if (path === '/automations') return <AutomationsPage />;
   if (path === '/widgets') return <WidgetsPage />;
@@ -115,7 +118,7 @@ export function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.15, ease: 'easeOut' }}
-                className={`flex-1 overflow-y-auto ${path === '/' || path === '' ? 'p-3' : 'p-6'}`}
+                className={`flex-1 ${path.endsWith('/webui') ? 'overflow-hidden' : 'overflow-y-auto'} ${path.endsWith('/webui') ? 'p-0' : path === '/' || path === '' ? 'p-3' : 'p-6'}`}
               >
                 <PageContent path={path} />
               </motion.main>

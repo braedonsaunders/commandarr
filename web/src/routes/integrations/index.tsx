@@ -8,7 +8,9 @@ import {
   PlayCircle, HardDrive, Download, DownloadCloud, BarChart2,
   BookOpen, EyeOff, ArrowDownCircle, Flame, Music, Home,
   Package, Inbox, Plus, Sparkles, Upload, Store, FolderOpen, Loader2, Power,
+  ExternalLink,
 } from 'lucide-react';
+import { useRouter } from '@/App';
 
 const cardContainerVariants = {
   hidden: {},
@@ -31,6 +33,7 @@ interface Integration {
   enabled: boolean;
   status: string;
   toolCount: number;
+  webUrl?: string;
 }
 
 type StatusFilter = 'all' | 'configured' | 'healthy' | 'unhealthy' | 'unconfigured' | 'disabled';
@@ -451,7 +454,26 @@ function AddIntegrationPanel({
 
 // ─── Main Page ────────────────────────────────────────────────────────
 
+function WebUIButton({ integration, navigate }: { integration: Integration; navigate: (to: string) => void }) {
+  if (!integration.webUrl || !integration.configured || !integration.enabled) return null;
+  return (
+    <button
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        navigate(`/integrations/${integration.id}/webui`);
+      }}
+      className="flex items-center gap-1 px-2 py-1 text-xs rounded-md bg-slate-800 hover:bg-slate-700 text-gray-400 hover:text-amber-400 border border-slate-700 hover:border-amber-500/30 transition-all"
+      title={`Open ${integration.name} WebUI`}
+    >
+      <ExternalLink className="w-3 h-3" />
+      WebUI
+    </button>
+  );
+}
+
 export default function IntegrationsPage() {
+  const { navigate } = useRouter();
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -808,7 +830,10 @@ export default function IntegrationsPage() {
                 <p className="text-sm text-gray-400 mt-1 line-clamp-2">{integration.description}</p>
                 <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
                   <span>{integration.toolCount} tools</span>
-                  <span className="text-gray-600">{category}</span>
+                  <div className="flex items-center gap-2">
+                    <WebUIButton integration={integration} navigate={navigate} />
+                    <span className="text-gray-600">{category}</span>
+                  </div>
                 </div>
               </motion.a>
             );

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 
 import { CredentialForm, type CredentialField } from '../../components/integrations/CredentialForm';
 import { StatusBadge } from '../../components/integrations/StatusBadge';
-import { ArrowLeft, Play, AlertTriangle } from 'lucide-react';
+import { ArrowLeft, Play, AlertTriangle, ExternalLink } from 'lucide-react';
 import { useRouter } from '@/App';
 
 interface Tool {
@@ -30,7 +30,7 @@ interface IntegrationDetail {
 }
 
 export default function IntegrationDetailPage() {
-  const { path } = useRouter();
+  const { path, navigate } = useRouter();
   const id = path.split('/integrations/')[1] || '';
   const [integration, setIntegration] = useState<IntegrationDetail | null>(null);
   const [activeTab, setActiveTab] = useState<'credentials' | 'tools' | 'webhooks'>('credentials');
@@ -117,33 +117,44 @@ export default function IntegrationDetailPage() {
             </div>
             <p className="text-sm text-gray-400 mt-1">{integration.description}</p>
           </div>
-          {integration.configured && (
-            <button
-              onClick={async () => {
-                const newEnabled = !integration.enabled;
-                await fetch(`/api/integrations/${id}/enabled`, {
-                  method: 'PATCH',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ enabled: newEnabled }),
-                });
-                const res = await fetch(`/api/integrations/${id}`);
-                const data = await res.json();
-                setIntegration(data);
-              }}
-              className={`relative w-11 h-6 rounded-full transition-colors ${
-                integration.enabled
-                  ? 'bg-green-500/80 hover:bg-green-500'
-                  : 'bg-gray-600 hover:bg-gray-500'
-              }`}
-              title={integration.enabled ? 'Disable integration' : 'Enable integration'}
-            >
-              <span
-                className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
-                  integration.enabled ? 'translate-x-5' : 'translate-x-0'
+          <div className="flex items-center gap-3">
+            {integration.configured && integration.enabled && integration.currentCredentials?.url && (
+              <button
+                onClick={() => navigate(`/integrations/${id}/webui`)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-slate-800 hover:bg-slate-700 text-gray-300 hover:text-amber-400 rounded-lg border border-slate-700 hover:border-amber-500/30 transition-all"
+              >
+                <ExternalLink className="w-4 h-4" />
+                Open WebUI
+              </button>
+            )}
+            {integration.configured && (
+              <button
+                onClick={async () => {
+                  const newEnabled = !integration.enabled;
+                  await fetch(`/api/integrations/${id}/enabled`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled: newEnabled }),
+                  });
+                  const res = await fetch(`/api/integrations/${id}`);
+                  const data = await res.json();
+                  setIntegration(data);
+                }}
+                className={`relative w-11 h-6 rounded-full transition-colors ${
+                  integration.enabled
+                    ? 'bg-green-500/80 hover:bg-green-500'
+                    : 'bg-gray-600 hover:bg-gray-500'
                 }`}
-              />
-            </button>
-          )}
+                title={integration.enabled ? 'Disable integration' : 'Enable integration'}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
+                    integration.enabled ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="flex gap-1 border-b border-slate-800">
