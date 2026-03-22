@@ -8,3 +8,4 @@ data/
 *.db-wal
 .env
 .DS_Store
+.playwright-cli/
