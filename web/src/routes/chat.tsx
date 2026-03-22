@@ -372,8 +372,8 @@ function createChatModelAdapter(
         `${protocol}//${window.location.host}/ws/chat${convParam}`
       );
 
-      let fullText = '';
-      const toolCalls: ToolCallPart[] = [];
+      // Content parts in chronological order - text and tool calls interleaved
+      const contentParts: Array<{ type: 'text'; text: string } | ToolCallPart> = [];
       let toolCallCounter = 0;
       let done = false;
       let error: string | null = null;
@@ -452,21 +452,22 @@ function createChatModelAdapter(
                 setConversationId(newConvId);
               }
             } else if (data.type === 'text') {
-              fullText += data.text as string;
+              // Append to last text part if it exists, otherwise create new one
+              const lastPart = contentParts[contentParts.length - 1];
+              if (lastPart && lastPart.type === 'text') {
+                lastPart.text += data.text as string;
+              } else {
+                contentParts.push({ type: 'text', text: data.text as string });
+              }
             } else if (data.type === 'tool_call') {
               const tc = data.toolCall as {
+                id?: string;
                 function?: { name?: string; arguments?: string };
                 name?: string;
               };
-              let tcArgs: Record<string, unknown> = {};
-              let argsText = '';
-              try {
-                argsText = tc.function?.arguments || '{}';
-                tcArgs = JSON.parse(argsText);
-              } catch {
-                // use empty args
-              }
+              const toolName = tc.function?.name || tc.name || 'unknown';
 
+              // Check if this is a result update for an existing tool call
               let tcResult: unknown = undefined;
               let tcIsError = false;
               if (data.text) {
@@ -480,16 +481,37 @@ function createChatModelAdapter(
                 }
               }
 
-              toolCallCounter++;
-              toolCalls.push({
-                type: 'tool-call',
-                toolCallId: `tc_${toolCallCounter}`,
-                toolName: tc.function?.name || tc.name || 'unknown',
-                args: tcArgs,
-                argsText,
-                result: tcResult,
-                isError: tcIsError,
-              });
+              // Find existing tool call by id or name to update with result
+              const existingTc = tc.id
+                ? contentParts.find((p): p is ToolCallPart => p.type === 'tool-call' && p.toolCallId === tc.id)
+                : contentParts.find((p): p is ToolCallPart => p.type === 'tool-call' && p.toolName === toolName && p.result === undefined);
+
+              if (existingTc && tcResult !== undefined) {
+                // Update existing tool call with result
+                existingTc.result = tcResult;
+                existingTc.isError = tcIsError;
+              } else if (!existingTc) {
+                // New tool call - add in order
+                let tcArgs: Record<string, unknown> = {};
+                let argsText = '';
+                try {
+                  argsText = tc.function?.arguments || '{}';
+                  tcArgs = JSON.parse(argsText);
+                } catch {
+                  // use empty args
+                }
+
+                toolCallCounter++;
+                contentParts.push({
+                  type: 'tool-call',
+                  toolCallId: tc.id || `tc_${toolCallCounter}`,
+                  toolName,
+                  args: tcArgs,
+                  argsText,
+                  result: tcResult,
+                  isError: tcIsError,
+                });
+              }
             } else if (data.type === 'done') {
               done = true;
               onDone();
@@ -499,16 +521,6 @@ function createChatModelAdapter(
               done = true;
               break;
             }
-          }
-
-          const contentParts: Array<{ type: 'text'; text: string } | ToolCallPart> = [];
-
-          for (const tc of toolCalls) {
-            contentParts.push(tc);
-          }
-
-          if (fullText) {
-            contentParts.push({ type: 'text', text: fullText });
           }
 
           if (contentParts.length > 0) {
@@ -522,7 +534,7 @@ function createChatModelAdapter(
           }
         }
 
-        if (error && fullText === '' && toolCalls.length === 0) {
+        if (error && contentParts.length === 0) {
           yield {
             content: [{ type: 'text' as const, text: `Error: ${error}` }] as unknown as ChatModelRunResult['content'],
             status: { type: 'incomplete' as const, reason: 'error' as const, error },
@@ -540,16 +552,18 @@ function createChatModelAdapter(
 
 // ─── Tool Call UI Component ──────────────────────────────────────────
 
-function ToolCallFallbackUI({ toolName, args, result, isError }: {
+function ToolCallFallbackUI({ toolName, args, result, isError, status }: {
   toolName: string;
   args: Record<string, unknown>;
   result?: unknown;
   isError?: boolean;
+  status?: { type: string };
   addResult: (result: unknown) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const meta = getToolMeta(toolName);
   const hasResult = result !== undefined;
+  const isComplete = hasResult || status?.type === 'complete';
 
   return (
     <div
@@ -581,7 +595,7 @@ function ToolCallFallbackUI({ toolName, args, result, isError }: {
 
         {isError ? (
           <XCircle className="w-4 h-4 text-red-400 shrink-0" />
-        ) : hasResult ? (
+        ) : isComplete ? (
           <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
         ) : (
           <Loader2 className="w-4 h-4 text-amber-400 shrink-0 animate-spin" />
@@ -687,11 +701,14 @@ function AssistantMessage() {
       <div className="max-w-[85%]">
         <MessagePrimitive.Content
           components={{
-            Text: ({ text }) => (
-              <div className="bg-slate-800 text-gray-100 rounded-2xl rounded-bl-sm px-4 py-3 text-sm leading-relaxed">
-                <MarkdownContent text={text} />
-              </div>
-            ),
+            Text: ({ text }) => {
+              if (!text?.trim()) return null;
+              return (
+                <div className="bg-slate-800 text-gray-100 rounded-2xl rounded-bl-sm px-4 py-3 text-sm leading-relaxed">
+                  <MarkdownContent text={text} />
+                </div>
+              );
+            },
             tools: {
               Fallback: ToolCallFallbackUI,
             },

@@ -97,6 +97,7 @@ async function handleChatMessage(
         ws.send(JSON.stringify({
           type: 'tool_call',
           toolCall: chunk.toolCall,
+          text: chunk.text,
           conversationId,
         }));
       } else if (chunk.type === 'done') {
