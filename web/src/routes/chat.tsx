@@ -10,6 +10,7 @@ import { cn } from '@/lib/cn';
 import {
   AssistantRuntimeProvider,
   useLocalRuntime,
+  useThreadRuntime,
   ThreadPrimitive,
   MessagePrimitive,
   ComposerPrimitive,
@@ -773,9 +774,38 @@ function WelcomeScreen() {
 
 // ─── Thread Component ────────────────────────────────────────────────
 
+const DRAFT_KEY = 'commandarr_chat_draft';
+
+/** Persists composer draft text to sessionStorage across tab navigation */
+function ComposerDraftPersistence() {
+  const threadRuntime = useThreadRuntime();
+
+  // Restore draft on mount
+  useEffect(() => {
+    const draft = sessionStorage.getItem(DRAFT_KEY);
+    if (draft) {
+      threadRuntime.composer.setText(draft);
+      sessionStorage.removeItem(DRAFT_KEY);
+    }
+  }, [threadRuntime]);
+
+  // Save draft on unmount
+  useEffect(() => {
+    return () => {
+      const text = threadRuntime.composer.getState().text?.trim();
+      if (text) {
+        sessionStorage.setItem(DRAFT_KEY, text);
+      }
+    };
+  }, [threadRuntime]);
+
+  return null;
+}
+
 function ChatThread() {
   return (
     <ThreadPrimitive.Root className="flex flex-col h-full">
+      <ComposerDraftPersistence />
       <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
         <ThreadPrimitive.Empty>
           <WelcomeScreen />
