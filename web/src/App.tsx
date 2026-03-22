@@ -25,8 +25,7 @@ import IntegrationsPage from './routes/integrations/index';
 import IntegrationDetailPage from './routes/integrations/detail';
 import AutomationsPage from './routes/automations';
 import WidgetsPage from './routes/widgets';
-import LLMSettingsPage from './routes/settings/llm';
-import GeneralSettingsPage from './routes/settings/general';
+import SettingsPage from './routes/settings/index';
 import LogsPage from './routes/logs';
 
 // ─── Page title map ────────────────────────────────────────────────
@@ -38,8 +37,7 @@ function getPageTitle(path: string): string {
   if (path.startsWith('/integrations/')) return 'Integration';
   if (path === '/automations') return 'Automations';
   if (path === '/widgets') return 'Widgets';
-  if (path === '/settings/llm') return 'LLM Settings';
-  if (path === '/settings/general' || path === '/settings') return 'Settings';
+  if (path.startsWith('/settings')) return 'Settings';
   if (path === '/logs') return 'Logs';
   return 'Dashboard';
 }
@@ -53,8 +51,7 @@ function PageContent({ path }: { path: string }) {
   if (path.startsWith('/integrations/')) return <IntegrationDetailPage />;
   if (path === '/automations') return <AutomationsPage />;
   if (path === '/widgets') return <WidgetsPage />;
-  if (path === '/settings/llm') return <LLMSettingsPage />;
-  if (path === '/settings/general' || path === '/settings') return <GeneralSettingsPage />;
+  if (path.startsWith('/settings')) return <SettingsPage />;
   if (path === '/logs') return <LogsPage />;
   return <DashboardPage />;
 }

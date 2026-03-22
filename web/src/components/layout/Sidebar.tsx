@@ -6,7 +6,6 @@ import {
   Plug,
   Zap,
   Puzzle,
-  Brain,
   Settings,
   ScrollText,
   Satellite,
@@ -28,8 +27,7 @@ const mainNavItems: NavItem[] = [
   { label: 'Integrations', href: '/integrations', icon: Plug },
   { label: 'Automations', href: '/automations', icon: Zap },
   { label: 'Widgets', href: '/widgets', icon: Puzzle },
-  { label: 'LLM Settings', href: '/settings/llm', icon: Brain },
-  { label: 'Settings', href: '/settings/general', icon: Settings },
+  { label: 'Settings', href: '/settings', icon: Settings },
 ];
 
 const bottomNavItems: NavItem[] = [
