@@ -138,6 +138,17 @@ if ($IsUpdate) {
       [System.IO.File]::WriteAllText($composeFile, $content)
     }
 
+    # Rescue data from old container if not already on a volume mount
+    $dataDir = Join-Path $InstallDir "data"
+    if (-not (Test-Path (Join-Path $dataDir "commandarr.db"))) {
+      Info "Checking for data inside old container..."
+      New-Item -ItemType Directory -Path $dataDir -Force | Out-Null
+      & docker cp commandarr:/app/data/commandarr.db "$dataDir/commandarr.db" 2>$null
+      if ($LASTEXITCODE -eq 0) {
+        Success "Rescued database from old container"
+      }
+    }
+
     Info "Restarting..."
     & docker rm -f commandarr 2>$null | Out-Null
     & docker compose up -d
@@ -339,7 +350,14 @@ Success "Image pulled"
 Info "Starting Commandarr..."
 Set-Location $InstallDir
 
-# Always remove any existing commandarr container to avoid conflicts
+# Rescue data from old container before removing
+$dataDir = Join-Path $InstallDir "data"
+if (-not (Test-Path (Join-Path $dataDir "commandarr.db"))) {
+  & docker cp commandarr:/app/data/commandarr.db "$dataDir/commandarr.db" 2>$null
+  if ($LASTEXITCODE -eq 0) { Success "Rescued database from old container" }
+}
+
+# Remove any existing commandarr container to avoid conflicts
 Info "Removing old container (if any)..."
 & docker rm -f commandarr 2>$null | Out-Null
 
