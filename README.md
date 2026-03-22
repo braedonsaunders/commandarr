@@ -109,17 +109,6 @@ The installer will:
 | `commandarr_toggle_automation` | Enable/disable automations by name or ID |
 | `commandarr_create_widget` | AI-generated live dashboard widgets |
 
-### Coming Soon
-
-- **Audiobookshelf** — Books and audiobooks paired with Readarr
-- **Komga / Kavita** — Manga, comics, and ebooks
-- **Tdarr / FileFlows** — Transcoding management
-- **Recyclarr** — TRaSH Guides quality profile sync
-- **Notifiarr** — Notification aggregation hub
-- **Portainer** — Docker container management
-- **Uptime Kuma** — Service uptime monitoring
-- **Mylar3** — Comic book management
-
 Community integrations welcome — copy `src/integrations/_template/` and follow the pattern.
 
 ---
