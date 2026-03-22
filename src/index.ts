@@ -8,7 +8,7 @@ import { api } from './routes/api';
 import { webhooks } from './routes/webhooks';
 import { handleWSUpgrade, wsHandlers, initLogBroadcast } from './routes/ws';
 import { join } from 'node:path';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 
 const app = new Hono();
 
@@ -17,10 +17,9 @@ app.use('*', cors());
 
 // Basic auth (if configured)
 if (config.authEnabled) {
-  // Skip auth for health check and webhooks
   app.use('*', async (c, next) => {
     const path = c.req.path;
-    if (path === '/health' || path.startsWith('/webhooks/')) {
+    if (path === '/health' || path.startsWith('/webhooks/') || path === '/debug/static') {
       return next();
     }
     const auth = basicAuth({
@@ -41,32 +40,67 @@ app.route('/webhooks', webhooks);
 // Health check
 app.get('/health', (c) => c.json({ status: 'ok', timestamp: new Date().toISOString() }));
 
-// Serve frontend static files
-// Resolve the web/dist directory relative to the source file location
-const distDir = join(import.meta.dir, '..', 'web', 'dist');
+// Find frontend dist directory
+function findDistDir(): string {
+  const candidates = [
+    join(import.meta.dir, '..', 'web', 'dist'),
+    join(process.cwd(), 'web', 'dist'),
+    '/app/web/dist',
+  ];
+  for (const dir of candidates) {
+    if (existsSync(join(dir, 'index.html'))) {
+      return dir;
+    }
+  }
+  return '';
+}
 
+const distDir = findDistDir();
+
+// Debug endpoint
+app.get('/debug/static', (c) => {
+  let distFiles: string[] = [];
+  try {
+    if (distDir) distFiles = readdirSync(distDir);
+  } catch {}
+  return c.json({
+    distDir,
+    distFound: !!distDir,
+    distFiles,
+    importMetaDir: import.meta.dir,
+    cwd: process.cwd(),
+  });
+});
+
+// Static file serving + SPA fallback
 app.get('/*', async (c) => {
+  if (!distDir) {
+    return c.html(`
+      <html><body style="background:#0a0a1a;color:#e0e0e0;font-family:system-ui;padding:40px;text-align:center">
+        <h1>🛰️ Commandarr</h1>
+        <p>Server is running but the dashboard files were not found.</p>
+        <p style="color:#888">Visit <a href="/debug/static" style="color:#E5A00D">/debug/static</a> for details.</p>
+        <p style="color:#888">API is available at <a href="/api/integrations" style="color:#E5A00D">/api/integrations</a></p>
+      </body></html>
+    `, 200);
+  }
+
   const urlPath = new URL(c.req.url).pathname;
 
-  // Try to serve the exact file
-  const filePath = join(distDir, urlPath);
-  const file = Bun.file(filePath);
-  if (await file.exists()) {
-    return new Response(file, {
-      headers: { 'Content-Type': getMimeType(urlPath) },
-    });
+  // Try to serve the exact file (skip directory-like paths)
+  if (urlPath !== '/' && !urlPath.endsWith('/')) {
+    const filePath = join(distDir, urlPath);
+    if (existsSync(filePath)) {
+      return new Response(Bun.file(filePath), {
+        headers: { 'Content-Type': getMimeType(urlPath) },
+      });
+    }
   }
 
-  // SPA fallback — serve index.html for all non-file routes
-  const indexPath = join(distDir, 'index.html');
-  const indexFile = Bun.file(indexPath);
-  if (await indexFile.exists()) {
-    return new Response(indexFile, {
-      headers: { 'Content-Type': 'text/html; charset=utf-8' },
-    });
-  }
-
-  return c.text('Dashboard not found. Run the frontend build first.', 404);
+  // SPA fallback — serve index.html
+  return new Response(Bun.file(join(distDir, 'index.html')), {
+    headers: { 'Content-Type': 'text/html; charset=utf-8' },
+  });
 });
 
 function getMimeType(path: string): string {
@@ -86,6 +120,13 @@ function getMimeType(path: string): string {
 // Initialize and start
 async function start() {
   logger.info('server', 'Starting Commandarr...');
+
+  // Log static file status
+  if (distDir) {
+    logger.info('server', `Frontend found at: ${distDir}`);
+  } else {
+    logger.warn('server', 'Frontend dist not found! Dashboard will show fallback page.');
+  }
 
   // Initialize database
   await initDb();
@@ -146,14 +187,12 @@ async function start() {
     port: config.port,
     hostname: config.host,
     fetch(req, server) {
-      // Handle WebSocket upgrades
       const url = new URL(req.url);
       if (url.pathname.startsWith('/ws/')) {
         if (handleWSUpgrade(req, server)) {
           return undefined;
         }
       }
-
       return app.fetch(req, { ip: server.requestIP(req) });
     },
     websocket: wsHandlers,
@@ -168,6 +207,7 @@ async function start() {
   ║   Dashboard: http://localhost:${String(server.port).padEnd(5)}      ║
   ║   Host:      ${config.host.padEnd(28)}║
   ║   Auth:      ${(config.authEnabled ? 'enabled' : 'disabled').padEnd(28)}║
+  ║   Frontend:  ${(distDir ? 'found' : 'NOT FOUND').padEnd(28)}║
   ║                                           ║
   ╚═══════════════════════════════════════════╝
   `);
