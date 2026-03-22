@@ -28,7 +28,7 @@ interface IntegrationDetail {
 
 export default function IntegrationDetailPage() {
   const { path } = useRouter();
-  const id = path.split('/integrations/')[1];
+  const id = path.split('/integrations/')[1] || '';
   const [integration, setIntegration] = useState<IntegrationDetail | null>(null);
   const [activeTab, setActiveTab] = useState<'credentials' | 'tools' | 'webhooks'>('credentials');
   const [loading, setLoading] = useState(true);
@@ -39,6 +39,7 @@ export default function IntegrationDetailPage() {
   const [testing, setTesting] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
+    if (!id) { setLoading(false); return; }
     fetch(`/api/integrations/${id}`)
       .then(r => r.json())
       .then(data => { setIntegration(data); setLoading(false); })
@@ -70,6 +71,10 @@ export default function IntegrationDetailPage() {
       const res = await fetch(`/api/integrations/${id}/test`, { method: 'POST' });
       const result = await res.json();
       setConnResult(result);
+      // Refresh integration data to update health status
+      if (result.success && integration) {
+        setIntegration({ ...integration, healthy: true, configured: true });
+      }
     } catch {
       setConnResult({ success: false, message: 'Connection test failed' });
     }
