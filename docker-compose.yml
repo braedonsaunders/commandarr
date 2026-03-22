@@ -5,13 +5,19 @@ services:
     container_name: commandarr
     restart: unless-stopped
     ports:
-      - "${PORT:-8484}:8484"
+      - "${PORT:-8484}:${PORT:-8484}"
     volumes:
       - ./data:/app/data
       - ./integrations:/app/custom-integrations
     environment:
-      - PORT=8484
+      - PORT=${PORT:-8484}
+      - HOST=0.0.0.0
       - ENCRYPTION_KEY=${ENCRYPTION_KEY:-commandarr-change-this-key}
+      # Basic auth (optional - set both to enable)
+      - AUTH_USERNAME=${AUTH_USERNAME:-}
+      - AUTH_PASSWORD=${AUTH_PASSWORD:-}
+      # Chat platforms (optional)
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
+      # Plex restart command (optional)
       - PLEX_RESTART_COMMAND=${PLEX_RESTART_COMMAND:-}
