@@ -2,12 +2,13 @@
   <img src="commandarr-readme.png" alt="Commandarr" width="700" />
 </p>
 
-<h3 align="center">Stop juggling 8 browser tabs to manage your media stack.</h3>
+<h3 align="center">The AI brain for your media stack. One interface for everything.</h3>
 
 <p align="center">
   Commandarr is an AI agent that talks to your entire Plex/Jellyfin/Emby + *arr ecosystem.<br/>
   Ask it questions in plain English. It figures out which services to query, takes action, and reports back.<br/>
-  One interface for everything — from your couch, your phone, or a Telegram message.
+  <b>Describe any dashboard widget and it builds it instantly. Need an integration that doesn't exist? It writes one for you.</b><br/>
+  From your couch, your phone, or a Telegram message.
 </p>
 
 <p align="center">
@@ -37,6 +38,13 @@ Commandarr sits on top of all of it. You talk to it like a person:
 > "Every morning at 9am, check if anything finished downloading overnight and send me a Telegram summary"
 
 It calls the right APIs, cross-references across services, and gives you the answer. No tab-switching. No memorizing which app does what.
+
+### What makes Commandarr different
+
+- **Dynamic UI generation** — Describe any dashboard widget and the AI builds it instantly. No templates, no presets. Every dashboard is unique to you.
+- **Self-extending** — Need an integration that doesn't exist? Tell the agent to build one. It writes the full integration from scratch — manifest, API client, tools — and it's live immediately.
+- **Cross-service reasoning** — The agent connects dots across your entire stack. It doesn't just query one API — it correlates data from Plex, Sonarr, qBittorrent, Prowlarr, and whatever else you're running to actually answer your question.
+- **Natural language automations** — No cron syntax. Just say *"every morning at 9am, send me a download summary on Telegram"* and it's done.
 
 ---
 
@@ -116,15 +124,19 @@ No cron expressions. Just say what you want:
 
 Automations run on schedule, execute the same agent logic, and optionally notify you via Telegram or Discord.
 
-### AI-Generated Widgets
+### AI-Generated Widgets — Build Any UI Instantly
 
-Describe a widget in plain English and the agent builds it — live HTML with real-time data from your integrations:
+This is the killer feature. Describe **any** widget in plain English and the agent builds it on the spot — fully functional HTML/CSS/JS with live data from your integrations. There are no templates. There are no limits. If you can describe it, Commandarr creates it.
 
-- *"Build me a widget showing who's watching Plex right now"*
-- *"Show my Radarr + Sonarr download queue as a combined list"*
+- *"Build me a widget showing who's watching Plex right now with poster art"*
+- *"Show my Radarr + Sonarr download queue as a combined list with progress bars"*
 - *"Make a calendar widget with upcoming releases this week"*
+- *"Create a server health dashboard with CPU, RAM, and disk usage across all my services"*
+- *"Build a widget that shows my most-watched genres this month as a pie chart"*
 
-Widgets auto-refresh, live on a drag-and-drop dashboard, and pull data directly from your services.
+The agent writes the widget code, wires up the API calls, and drops it onto your dashboard. Widgets auto-refresh on a configurable interval, support drag-and-drop positioning, and pull data directly from any connected service. Don't like the layout? Just tell it to change it. Want to combine data from 5 different services into one view? Done.
+
+**Every user's dashboard is unique** — because you design it by describing what you want.
 
 ### Multi-Provider LLM with Fallback
 
@@ -164,14 +176,14 @@ Install Commandarr on your phone's homescreen. Quick-action buttons for the stuf
 
 ## Supported Integrations
 
-37+ integrations with 100+ tools. If it has an API, Commandarr probably talks to it.
+37+ integrations with 140+ tools. If it has an API, Commandarr probably talks to it — or it can build the integration for you.
 
 ### Media Servers
 | Integration | What It Can Do |
 |-------------|---------------|
-| **Plex** | Health check, restart, now playing, libraries, search |
-| **Jellyfin** | Health check, now playing, libraries, search, recently added, users |
-| **Emby** | Health check, now playing, libraries, search, recently added, users |
+| **Plex** | Now playing, restart, library scan, search, media info, play control, scheduled tasks, activity log, devices, users, watchlist gaps — 15 tools |
+| **Jellyfin** | Now playing, restart, library scan, search, media info, play control, scheduled tasks, activity log, session messaging, devices, users — 14 tools |
+| **Emby** | Now playing, restart, library scan, search, media info, play control, scheduled tasks, activity log, session messaging, devices, users — 14 tools |
 
 ### Media Management
 | Integration | What It Can Do |
@@ -260,18 +272,31 @@ The installer handles this automatically based on your answers.
 
 ## Extending Commandarr
 
-### Community Integrations
+### AI-Generated Integrations — Just Ask
 
-Adding a new integration is straightforward — copy the template directory, define a manifest and tools:
+Don't see a service you need? **Tell Commandarr to build the integration for you.** The agent can write a complete integration — manifest, API client, and tools — from a description or API docs:
+
+> *"Add an integration for my Unraid server"*
+>
+> *"Build a Portainer integration that can list and restart containers"*
+>
+> *"I use Audiobookshelf — make an integration that shows my listening progress and library stats"*
+
+The agent generates the integration files, registers them, and they're immediately available as tools and widget data sources. No coding required. No PRs to wait on. Your custom integrations persist across updates in the `custom-integrations` volume.
+
+### Manual Integrations
+
+You can also build integrations by hand — copy the template directory, define a manifest and tools:
 
 ```
 src/integrations/_template/
-  ├── manifest.json    # name, description, credential fields
+  ├── manifest.ts      # name, description, credential fields
+  ├── client.ts        # API client
   ├── tools/           # one file per tool
-  └── README.md        # docs shown in the UI
+  └── widgets/         # prebuilt widgets (optional)
 ```
 
-If a service has an API, you can make Commandarr talk to it.
+If a service has an API, Commandarr can talk to it — whether the agent writes the integration or you do.
 
 ---
 
