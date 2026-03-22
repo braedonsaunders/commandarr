@@ -85,6 +85,12 @@ export function buildSystemPrompt(
   lines.push('## Cross-Service Workflows');
   lines.push('You can chain multiple tools together to accomplish complex tasks. Think step-by-step across services:');
   lines.push('');
+  lines.push('### Library Lookup vs External Search');
+  lines.push('- IMPORTANT: *_search tools (sonarr_search, radarr_search, lidarr_search, readarr_search) search EXTERNAL databases for media to ADD. They do NOT look up media already in your library.');
+  lines.push('- To check what is already in the library, use the *_detail tools: sonarr_series_detail, radarr_movie_detail, lidarr_artist_detail, readarr_author_detail, whisparr_series_detail');
+  lines.push('- When the user asks "do I have X?" or "how many episodes of X?" — always use the *_detail tool first, not *_search');
+  lines.push('- The *_detail tools return episode/album/book counts, download status, and per-season breakdowns');
+  lines.push('');
   lines.push('### Media Request → Download → Subtitle Flow');
   lines.push('- When adding media: use radarr_add/sonarr_add/lidarr_add, then check the queue with *_queue tools');
   lines.push('- After downloads complete: check bazarr_wanted_movies/bazarr_wanted_series for missing subtitles');
