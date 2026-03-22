@@ -130,7 +130,16 @@ if ($IsUpdate) {
     & docker pull $Image
     Success "Image updated"
 
+    # Clean obsolete version key from existing docker-compose.yml
+    $composeFile = Join-Path $InstallDir "docker-compose.yml"
+    if (Test-Path $composeFile) {
+      $content = Get-Content $composeFile -Raw
+      $content = $content -replace "(?m)^version:.*\r?\n", ""
+      [System.IO.File]::WriteAllText($composeFile, $content)
+    }
+
     Info "Restarting..."
+    & docker rm -f commandarr 2>$null | Out-Null
     & docker compose up -d
     Success "Commandarr updated and running!"
 
@@ -330,12 +339,9 @@ Success "Image pulled"
 Info "Starting Commandarr..."
 Set-Location $InstallDir
 
-# Remove any existing commandarr container that would conflict
-$existing = & docker ps -a --filter "name=^/commandarr$" --format "{{.ID}}" 2>$null
-if ($existing) {
-  Info "Removing old commandarr container..."
-  & docker rm -f commandarr 2>$null | Out-Null
-}
+# Always remove any existing commandarr container to avoid conflicts
+Info "Removing old container (if any)..."
+& docker rm -f commandarr 2>$null | Out-Null
 
 & docker compose up -d
 if ($LASTEXITCODE -ne 0) {
