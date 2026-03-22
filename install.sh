@@ -320,7 +320,6 @@ echo ""
 info "Writing docker-compose.yml..."
 
 cat > "$INSTALL_DIR/docker-compose.yml" << COMPOSE
-version: '3.8'
 services:
   commandarr:
     image: $IMAGE
@@ -355,6 +354,13 @@ success "Image pulled"
 
 info "Starting Commandarr..."
 cd "$INSTALL_DIR"
+
+# Remove any existing commandarr container that would conflict
+if docker ps -a --filter "name=^/commandarr$" --format "{{.ID}}" 2>/dev/null | grep -q .; then
+  info "Removing old commandarr container..."
+  docker rm -f commandarr >/dev/null 2>&1
+fi
+
 $COMPOSE_CMD up -d
 success "Commandarr is running!"
 

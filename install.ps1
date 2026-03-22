@@ -292,7 +292,6 @@ Write-Host ""
 Info "Writing docker-compose.yml..."
 
 $lines = @()
-$lines += "version: '3.8'"
 $lines += "services:"
 $lines += "  commandarr:"
 $lines += "    image: $Image"
@@ -330,6 +329,14 @@ Success "Image pulled"
 
 Info "Starting Commandarr..."
 Set-Location $InstallDir
+
+# Remove any existing commandarr container that would conflict
+$existing = & docker ps -a --filter "name=^/commandarr$" --format "{{.ID}}" 2>$null
+if ($existing) {
+  Info "Removing old commandarr container..."
+  & docker rm -f commandarr 2>$null | Out-Null
+}
+
 & docker compose up -d
 if ($LASTEXITCODE -ne 0) {
   Err "Failed to start. Check Docker Desktop is running."
