@@ -1,16 +1,22 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MessageList } from '../components/chat/MessageList';
-import { ChatInput } from '../components/chat/ChatInput';
-import type { ToolCallData } from '../components/chat/ToolCallCard';
-import { Plus, X, MessageSquare, PanelLeftOpen, PanelLeftClose } from 'lucide-react';
+import {
+  Plus, X, MessageSquare, PanelLeftOpen, PanelLeftClose,
+  CheckCircle2, XCircle, ChevronDown, Loader2, Activity,
+} from 'lucide-react';
 import { cn } from '@/lib/cn';
+import {
+  AssistantRuntimeProvider,
+  useLocalRuntime,
+  ThreadPrimitive,
+  MessagePrimitive,
+  ComposerPrimitive,
+  useAssistantToolUI,
+  type ChatModelAdapter,
+  type ChatModelRunResult,
+} from '@assistant-ui/react';
 
-export interface ChatMessage {
-  role: 'user' | 'assistant';
-  content: string;
-  toolCalls?: ToolCallData[];
-}
+// ─── Types ───────────────────────────────────────────────────────────
 
 interface Conversation {
   id: string;
@@ -25,14 +31,31 @@ interface GroupedConversations {
   conversations: Conversation[];
 }
 
-const QUICK_ACTIONS = [
-  "What's currently playing on Plex?",
-  "Check download queue",
-  "What movies are coming out this week?",
-  "Is everything running?",
-];
+// ─── Tool icon/label metadata (reused from ToolCallCard) ─────────────
 
-// ─── Helpers ──────────────────────────────────────────────────────────
+const TOOL_META: Record<string, { color: string; label: string }> = {
+  plex_health_check:  { color: '#E5A00D', label: 'Plex Health Check' },
+  plex_now_playing:   { color: '#E5A00D', label: 'Now Playing' },
+  plex_libraries:     { color: '#E5A00D', label: 'Plex Libraries' },
+  plex_search:        { color: '#E5A00D', label: 'Plex Search' },
+  plex_restart:       { color: '#E5A00D', label: 'Restart Plex' },
+  radarr_search:      { color: '#FFC230', label: 'Movie Search' },
+  radarr_add:         { color: '#FFC230', label: 'Add Movie' },
+  radarr_queue:       { color: '#FFC230', label: 'Download Queue' },
+  radarr_calendar:    { color: '#FFC230', label: 'Upcoming Movies' },
+  radarr_profiles:    { color: '#FFC230', label: 'Quality Profiles' },
+  sonarr_search:      { color: '#35C5F4', label: 'Show Search' },
+  sonarr_add:         { color: '#35C5F4', label: 'Add Show' },
+  sonarr_queue:       { color: '#35C5F4', label: 'Download Queue' },
+  sonarr_calendar:    { color: '#35C5F4', label: 'Upcoming Episodes' },
+  sonarr_profiles:    { color: '#35C5F4', label: 'Quality Profiles' },
+};
+
+function getToolMeta(name: string) {
+  return TOOL_META[name] || { color: '#888', label: name.replace(/_/g, ' ') };
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────
 
 function getRelativeTime(dateStr: string): string {
   const date = new Date(dateStr);
@@ -81,7 +104,7 @@ function groupConversations(conversations: Conversation[]): GroupedConversations
     .map(label => ({ label, conversations: groups[label] }));
 }
 
-// ─── Sidebar ──────────────────────────────────────────────────────────
+// ─── Sidebar ─────────────────────────────────────────────────────────
 
 interface ConversationSidebarProps {
   conversations: Conversation[];
@@ -225,18 +248,446 @@ function ConversationSidebar({
   );
 }
 
-// ─── Chat page ────────────────────────────────────────────────────────
+// ─── Chat Model Adapter (WebSocket streaming) ────────────────────────
+
+interface ToolCallPart {
+  type: 'tool-call';
+  toolCallId: string;
+  toolName: string;
+  args: Record<string, unknown>;
+  argsText: string;
+  result?: unknown;
+  isError?: boolean;
+}
+
+type QueueItem =
+  | { kind: 'message'; data: Record<string, unknown> }
+  | { kind: 'close' }
+  | { kind: 'error'; error: string };
+
+// We store the current conversation ID in a ref accessible to the adapter.
+// The adapter factory is re-created when the conversation ID changes.
+function createChatModelAdapter(
+  conversationIdRef: React.MutableRefObject<string | null>,
+  setConversationId: (id: string) => void,
+  onDone: () => void,
+): ChatModelAdapter {
+  return {
+    async *run({ messages, abortSignal }): AsyncGenerator<ChatModelRunResult, void> {
+      // Extract the last user message text
+      const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
+      if (!lastUserMessage) return;
+
+      let userText = '';
+      if ('content' in lastUserMessage) {
+        for (const part of lastUserMessage.content) {
+          if (part.type === 'text') {
+            userText = part.text;
+            break;
+          }
+        }
+      }
+
+      if (!userText) return;
+
+      // Open WebSocket
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const convParam = conversationIdRef.current
+        ? `?conversationId=${conversationIdRef.current}`
+        : '';
+      const ws = new WebSocket(
+        `${protocol}//${window.location.host}/ws/chat${convParam}`
+      );
+
+      // Track accumulated state
+      let fullText = '';
+      const toolCalls: ToolCallPart[] = [];
+      let toolCallCounter = 0;
+      let done = false;
+      let error: string | null = null;
+
+      // Create a promise-based message queue
+      const queue: QueueItem[] = [];
+      let resolveWait: (() => void) | null = null;
+
+      function enqueue(item: QueueItem) {
+        queue.push(item);
+        if (resolveWait) {
+          resolveWait();
+          resolveWait = null;
+        }
+      }
+
+      function waitForNext(): Promise<void> {
+        if (queue.length > 0) return Promise.resolve();
+        return new Promise(r => { resolveWait = r; });
+      }
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({
+          type: 'message',
+          message: userText,
+          conversationId: conversationIdRef.current,
+        }));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const parsed = JSON.parse(event.data);
+          enqueue({ kind: 'message', data: parsed });
+        } catch {
+          // ignore parse errors
+        }
+      };
+
+      ws.onclose = () => {
+        enqueue({ kind: 'close' });
+      };
+
+      ws.onerror = () => {
+        enqueue({ kind: 'error', error: 'WebSocket connection error' });
+      };
+
+      // Handle abort
+      const onAbort = () => {
+        ws.close();
+        enqueue({ kind: 'close' });
+      };
+      abortSignal.addEventListener('abort', onAbort);
+
+      try {
+        while (!done) {
+          await waitForNext();
+
+          while (queue.length > 0) {
+            const item = queue.shift()!;
+
+            if (item.kind === 'close') {
+              done = true;
+              break;
+            }
+
+            if (item.kind === 'error') {
+              error = item.error;
+              done = true;
+              break;
+            }
+
+            const data = item.data;
+
+            if (data.type === 'connected') {
+              const newConvId = data.conversationId as string;
+              if (newConvId) {
+                conversationIdRef.current = newConvId;
+                setConversationId(newConvId);
+              }
+            } else if (data.type === 'text') {
+              fullText += data.text as string;
+            } else if (data.type === 'tool_call') {
+              const tc = data.toolCall as {
+                function?: { name?: string; arguments?: string };
+                name?: string;
+              };
+              let tcArgs: Record<string, unknown> = {};
+              let argsText = '';
+              try {
+                argsText = tc.function?.arguments || '{}';
+                tcArgs = JSON.parse(argsText);
+              } catch {
+                // use empty args
+              }
+
+              let tcResult: unknown = undefined;
+              let tcIsError = false;
+              if (data.text) {
+                const textStr = data.text as string;
+                try {
+                  tcResult = JSON.parse(textStr);
+                  tcIsError = textStr.startsWith('Error');
+                } catch {
+                  tcResult = textStr;
+                  tcIsError = textStr.startsWith('Error');
+                }
+              }
+
+              toolCallCounter++;
+              toolCalls.push({
+                type: 'tool-call',
+                toolCallId: `tc_${toolCallCounter}`,
+                toolName: tc.function?.name || tc.name || 'unknown',
+                args: tcArgs,
+                argsText,
+                result: tcResult,
+                isError: tcIsError,
+              });
+            } else if (data.type === 'done') {
+              done = true;
+              onDone();
+              break;
+            } else if (data.type === 'error') {
+              error = data.error as string;
+              done = true;
+              break;
+            }
+          }
+
+          // Build content parts for current state
+          const contentParts: Array<{ type: 'text'; text: string } | ToolCallPart> = [];
+
+          // Add tool calls first
+          for (const tc of toolCalls) {
+            contentParts.push(tc);
+          }
+
+          // Add text
+          if (fullText) {
+            contentParts.push({ type: 'text', text: fullText });
+          }
+
+          if (contentParts.length > 0) {
+            const status = done
+              ? error
+                ? { type: 'incomplete' as const, reason: 'error' as const, error }
+                : { type: 'complete' as const, reason: 'stop' as const }
+              : { type: 'running' as const };
+
+            yield { content: contentParts as unknown as ChatModelRunResult['content'], status };
+          }
+        }
+
+        // Final yield if we exited with error and haven't yielded yet
+        if (error && fullText === '' && toolCalls.length === 0) {
+          yield {
+            content: [{ type: 'text' as const, text: `Error: ${error}` }] as unknown as ChatModelRunResult['content'],
+            status: { type: 'incomplete' as const, reason: 'error' as const, error },
+          };
+        }
+      } finally {
+        abortSignal.removeEventListener('abort', onAbort);
+        if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+          ws.close();
+        }
+      }
+    },
+  };
+}
+
+// ─── Tool Call UI Component ──────────────────────────────────────────
+
+function ToolCallFallbackUI({ toolName, args, result, isError }: {
+  toolName: string;
+  args: Record<string, unknown>;
+  result?: unknown;
+  isError?: boolean;
+  addResult: (result: unknown) => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const meta = getToolMeta(toolName);
+  const hasResult = result !== undefined;
+
+  return (
+    <div
+      className={cn(
+        'rounded-xl border overflow-hidden my-2',
+        isError ? 'border-red-500/30 bg-red-500/5' : 'border-slate-700/50 bg-slate-850',
+      )}
+    >
+      {/* Header */}
+      <button
+        type="button"
+        onClick={() => setExpanded(prev => !prev)}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-800/30 transition-colors"
+      >
+        <div
+          className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
+          style={{ backgroundColor: `${meta.color}15` }}
+        >
+          <Activity className="w-4 h-4" style={{ color: meta.color }} />
+        </div>
+
+        <div className="flex-1 min-w-0">
+          <div className="text-sm font-medium text-gray-200">{meta.label}</div>
+          {Object.keys(args).length > 0 && (
+            <div className="text-xs text-gray-500 truncate">
+              {Object.entries(args).map(([k, v]) => `${k}: ${v}`).join(' \u00b7 ')}
+            </div>
+          )}
+        </div>
+
+        {isError ? (
+          <XCircle className="w-4 h-4 text-red-400 shrink-0" />
+        ) : hasResult ? (
+          <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
+        ) : (
+          <Loader2 className="w-4 h-4 text-amber-400 shrink-0 animate-spin" />
+        )}
+
+        <ChevronDown
+          className={cn(
+            'w-4 h-4 text-gray-500 transition-transform shrink-0',
+            expanded && 'rotate-180'
+          )}
+        />
+      </button>
+
+      {/* Result body */}
+      {expanded && hasResult && (
+        <div className="border-t border-slate-800/50 px-4 py-3">
+          {typeof result === 'object' && result !== null ? (
+            <pre className="overflow-x-auto rounded bg-slate-800/50 p-2 text-xs text-gray-400 font-mono max-h-48 overflow-y-auto">
+              {JSON.stringify(result, null, 2)}
+            </pre>
+          ) : (
+            <p className="text-sm text-gray-300">{String(result)}</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Custom Message Components ───────────────────────────────────────
+
+function UserMessage() {
+  return (
+    <div className="flex justify-end px-4 py-2">
+      <div className="max-w-[80%] bg-amber-500 text-slate-950 rounded-2xl rounded-br-sm px-4 py-2.5 font-medium text-sm">
+        <MessagePrimitive.Content
+          components={{
+            Text: ({ text }) => <p className="whitespace-pre-wrap">{text}</p>,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function AssistantMessage() {
+  return (
+    <div className="flex justify-start px-4 py-2">
+      <div className="max-w-[85%]">
+        <MessagePrimitive.Content
+          components={{
+            Text: ({ text }) => (
+              <div className="bg-slate-800 text-gray-100 rounded-2xl rounded-bl-sm px-4 py-2.5 text-sm">
+                <p className="whitespace-pre-wrap leading-relaxed">{text}</p>
+              </div>
+            ),
+            tools: {
+              Fallback: ToolCallFallbackUI,
+            },
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ─── Quick Action Suggestions ────────────────────────────────────────
+
+const QUICK_ACTIONS = [
+  "What's currently playing on Plex?",
+  "Check download queue",
+  "What movies are coming out this week?",
+  "Is everything running?",
+];
+
+function WelcomeScreen() {
+  return (
+    <div className="flex flex-col items-center justify-center h-full text-center px-4">
+      <div className="text-4xl mb-4">&#x1F6F0;&#xFE0F;</div>
+      <h2 className="text-xl font-semibold text-gray-200 mb-2">Commandarr</h2>
+      <p className="text-gray-400 mb-6 max-w-md">
+        Ask me anything about your media stack. I can check what&apos;s playing,
+        manage downloads, add movies and shows, and more.
+      </p>
+      <div className="flex flex-wrap gap-2 justify-center max-w-lg">
+        {QUICK_ACTIONS.map((action, index) => (
+          <ThreadPrimitive.Suggestion
+            key={action}
+            prompt={action}
+            autoSend
+            asChild
+          >
+            <motion.button
+              className="px-3 py-2 text-sm bg-slate-800 hover:bg-slate-700 text-gray-300 rounded-lg border border-slate-700 transition-colors"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: index * 0.05, duration: 0.3 }}
+              whileHover={{ scale: 1.03 }}
+              whileTap={{ scale: 0.97 }}
+            >
+              {action}
+            </motion.button>
+          </ThreadPrimitive.Suggestion>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Thread Component ────────────────────────────────────────────────
+
+function ChatThread() {
+  // Register a fallback tool UI so all tool calls render with our component
+  useAssistantToolUI({
+    toolName: '*',
+    render: ToolCallFallbackUI,
+  });
+
+  return (
+    <ThreadPrimitive.Root className="flex flex-col h-full">
+      <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
+        <ThreadPrimitive.Empty>
+          <WelcomeScreen />
+        </ThreadPrimitive.Empty>
+
+        <ThreadPrimitive.Messages
+          components={{
+            UserMessage,
+            AssistantMessage,
+          }}
+        />
+      </ThreadPrimitive.Viewport>
+
+      <div className="p-4 border-t border-slate-800">
+        <ComposerPrimitive.Root className="flex items-end gap-2 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2">
+          <ComposerPrimitive.Input
+            placeholder="Ask about your media stack..."
+            className="flex-1 bg-transparent text-gray-100 text-sm outline-none resize-none min-h-[2.5rem] max-h-[10rem] placeholder:text-slate-500"
+            autoFocus
+          />
+          <ThreadPrimitive.If running={false}>
+            <ComposerPrimitive.Send className="shrink-0 w-8 h-8 flex items-center justify-center bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-lg transition-colors disabled:bg-slate-700 disabled:text-slate-500 disabled:cursor-not-allowed">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13" />
+                <polygon points="22 2 15 22 11 13 2 9 22 2" />
+              </svg>
+            </ComposerPrimitive.Send>
+          </ThreadPrimitive.If>
+          <ThreadPrimitive.If running>
+            <ComposerPrimitive.Cancel className="shrink-0 w-8 h-8 flex items-center justify-center bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="4" y="4" width="16" height="16" rx="2" />
+              </svg>
+            </ComposerPrimitive.Cancel>
+          </ThreadPrimitive.If>
+        </ComposerPrimitive.Root>
+      </div>
+    </ThreadPrimitive.Root>
+  );
+}
+
+// ─── Chat Page ───────────────────────────────────────────────────────
 
 export default function ChatPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [sending, setSending] = useState(false);
-  const [streamText, setStreamText] = useState('');
-  const [pendingToolCalls, setPendingToolCalls] = useState<ToolCallData[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
-  const fetchHistoryRef = useRef<() => void>(() => {});
+  const conversationIdRef = useRef<string | null>(null);
+
+  // Keep ref in sync
+  conversationIdRef.current = conversationId;
 
   // ─── Fetch conversation history ──────────────────────────────────
   const fetchHistory = useCallback(() => {
@@ -251,159 +702,58 @@ export default function ChatPage() {
       .catch(() => {});
   }, []);
 
-  fetchHistoryRef.current = fetchHistory;
-
   useEffect(() => {
     fetchHistory();
   }, [fetchHistory]);
 
-  // ─── Shared WS message handler ───────────────────────────────────
-  const createWsHandler = useCallback(() => {
-    return (event: MessageEvent) => {
-      const data = JSON.parse(event.data);
+  // ─── Chat model adapter ──────────────────────────────────────────
+  const adapter = useMemo(
+    () => createChatModelAdapter(conversationIdRef, setConversationId, fetchHistory),
+    [fetchHistory]
+  );
 
-      if (data.type === 'connected') {
-        setConversationId(data.conversationId);
-      } else if (data.type === 'text') {
-        setStreamText(prev => prev + data.text);
-      } else if (data.type === 'tool_call') {
-        const tc = data.toolCall;
-        let params: Record<string, unknown> = {};
-        let result: string | undefined;
-        try { params = JSON.parse(tc.function?.arguments || '{}'); } catch {}
-        if (data.text) {
-          try {
-            const parsed = JSON.parse(data.text);
-            result = parsed.message || data.text;
-          } catch {
-            result = data.text;
-          }
-        }
-        setPendingToolCalls(prev => [...prev, {
-          name: tc.function?.name || tc.name || 'unknown',
-          parameters: params,
-          result,
-          error: result?.startsWith('Error') || false,
-        }]);
-      } else if (data.type === 'done') {
-        setStreamText(prev => {
-          setPendingToolCalls(prevTC => {
-            const toolCalls = prevTC.length > 0 ? [...prevTC] : undefined;
-            if (prev || toolCalls) {
-              setMessages(msgs => [...msgs, {
-                role: 'assistant',
-                content: prev,
-                toolCalls,
-              }]);
-            }
-            return [];
-          });
-          return '';
-        });
-        setSending(false);
-        fetchHistoryRef.current();
-      } else if (data.type === 'error') {
-        setMessages(msgs => [...msgs, { role: 'assistant', content: `Error: ${data.error}` }]);
-        setStreamText('');
-        setPendingToolCalls([]);
-        setSending(false);
-      }
-    };
-  }, []);
-
-  // ─── Connect WS ──────────────────────────────────────────────────
-  const openWs = useCallback((convId: string | null) => {
-    wsRef.current?.close();
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const convParam = convId ? `?conversationId=${convId}` : '';
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/chat${convParam}`);
-    ws.onmessage = createWsHandler();
-    ws.onclose = () => {
-      // Only reconnect if this ws is still the active one
-      if (wsRef.current === ws) {
-        setTimeout(() => openWs(convId), 3000);
-      }
-    };
-    wsRef.current = ws;
-  }, [createWsHandler]);
-
-  useEffect(() => {
-    openWs(null);
-    return () => { wsRef.current?.close(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const runtime = useLocalRuntime(adapter, {
+    maxSteps: 5,
+  });
 
   // ─── Handlers ────────────────────────────────────────────────────
-  const handleSend = (message: string) => {
-    if (!message.trim() || sending) return;
-
-    setMessages(prev => [...prev, { role: 'user', content: message }]);
-    setSending(true);
-    setStreamText('');
-    setPendingToolCalls([]);
-
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'message', message, conversationId }));
-    } else {
-      fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, conversationId }),
-      })
-        .then(r => r.json())
-        .then(data => {
-          setMessages(prev => [...prev, { role: 'assistant', content: data.response }]);
-          if (data.conversationId) setConversationId(data.conversationId);
-          setSending(false);
-          fetchHistory();
-        })
-        .catch(e => {
-          setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${e.message}` }]);
-          setSending(false);
-        });
-    }
-  };
-
   const handleNewChat = useCallback(() => {
-    setMessages([]);
     setConversationId(null);
-    setStreamText('');
-    setPendingToolCalls([]);
-    setSending(false);
-    openWs(null);
+    conversationIdRef.current = null;
     setSidebarOpen(false);
-  }, [openWs]);
+    // Reset the thread in the runtime
+    runtime.thread.reset();
+  }, [runtime]);
 
   const handleSelectConversation = useCallback((conv: Conversation) => {
-    if (conv.id === conversationId) return;
+    if (conv.id === conversationIdRef.current) return;
 
-    const loadedMessages: ChatMessage[] = (conv.messages || []).map(m => ({
+    setConversationId(conv.id);
+    conversationIdRef.current = conv.id;
+    setSidebarOpen(false);
+
+    // Load conversation messages into the runtime
+    const threadMessages = (conv.messages || []).map(m => ({
       role: m.role as 'user' | 'assistant',
       content: m.content,
     }));
 
-    setMessages(loadedMessages);
-    setConversationId(conv.id);
-    setStreamText('');
-    setPendingToolCalls([]);
-    setSending(false);
-    openWs(conv.id);
-    setSidebarOpen(false);
-  }, [conversationId, openWs]);
+    runtime.thread.reset(threadMessages);
+  }, [runtime]);
 
   const handleDeleteConversation = useCallback((id: string) => {
     fetch(`/api/chat/history/${id}`, { method: 'DELETE' })
       .then(() => {
         setConversations(prev => prev.filter(c => c.id !== id));
-        if (id === conversationId) {
+        if (id === conversationIdRef.current) {
           handleNewChat();
         }
       })
       .catch(() => {});
-  }, [conversationId, handleNewChat]);
+  }, [handleNewChat]);
 
   return (
-    <>
+    <AssistantRuntimeProvider runtime={runtime}>
       <div className="flex h-[calc(100vh-8rem)]">
         {/* Conversation sidebar */}
         <ConversationSidebar
@@ -431,50 +781,19 @@ export default function ChatPage() {
                 <p className="text-sm text-gray-400">Talk to your media stack</p>
               </div>
             </div>
-            {messages.length > 0 && (
-              <button onClick={handleNewChat}
-                className="px-3 py-1.5 text-sm text-gray-400 hover:text-gray-200 border border-slate-700 rounded-lg hover:bg-slate-800 transition-colors">
-                New Chat
-              </button>
-            )}
+            <button
+              onClick={handleNewChat}
+              className="px-3 py-1.5 text-sm text-gray-400 hover:text-gray-200 border border-slate-700 rounded-lg hover:bg-slate-800 transition-colors"
+            >
+              New Chat
+            </button>
           </div>
 
           <div className="flex-1 flex flex-col min-h-0 bg-slate-900/50 rounded-xl border border-slate-800 overflow-hidden">
-            {messages.length === 0 && !streamText && !sending ? (
-              <div className="flex flex-col items-center justify-center h-full text-center px-4">
-                <div className="text-4xl mb-4">🛰️</div>
-                <h2 className="text-xl font-semibold text-gray-200 mb-2">Commandarr</h2>
-                <p className="text-gray-400 mb-6 max-w-md">
-                  Ask me anything about your media stack. I can check what's playing,
-                  manage downloads, add movies and shows, and more.
-                </p>
-                <div className="flex flex-wrap gap-2 justify-center max-w-lg">
-                  {QUICK_ACTIONS.map((action, index) => (
-                    <motion.button key={action} onClick={() => handleSend(action)}
-                      className="px-3 py-2 text-sm bg-slate-800 hover:bg-slate-700 text-gray-300 rounded-lg border border-slate-700 transition-colors"
-                      initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.05, duration: 0.3 }}
-                      whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }}>
-                      {action}
-                    </motion.button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <MessageList
-                messages={messages}
-                streamText={streamText}
-                isThinking={sending && !streamText && pendingToolCalls.length === 0}
-                pendingToolCalls={pendingToolCalls}
-              />
-            )}
-          </div>
-
-          <div className="mt-4">
-            <ChatInput onSend={handleSend} disabled={sending} />
+            <ChatThread />
           </div>
         </div>
       </div>
-    </>
+    </AssistantRuntimeProvider>
   );
 }

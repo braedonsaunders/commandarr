@@ -155,3 +155,60 @@ webhooks.post('/seerr', async (c) => {
     return c.json({ success: false }, 500);
   }
 });
+
+webhooks.post('/emby', async (c) => {
+  try {
+    const payload = await c.req.json();
+    const event = payload.Event || payload.NotificationType || 'unknown';
+
+    logger.info('webhook', `Emby webhook received: ${event}`, {
+      event,
+      item: payload.Item?.Name,
+      user: payload.User?.Name,
+    });
+
+    const db = await getDb();
+    await db.insert(auditLog).values({
+      id: nanoid(),
+      timestamp: new Date(),
+      source: 'webhook',
+      action: `emby.${event}`,
+      integration: 'emby',
+      input: JSON.stringify(payload),
+      level: 'info',
+    });
+
+    return c.json({ success: true });
+  } catch (e) {
+    logger.error('webhook', 'Emby webhook error', e);
+    return c.json({ success: false }, 500);
+  }
+});
+
+webhooks.post('/homeassistant', async (c) => {
+  try {
+    const payload = await c.req.json();
+    const event = payload.event_type || payload.trigger || 'unknown';
+
+    logger.info('webhook', `Home Assistant webhook received: ${event}`, {
+      event,
+      entity: payload.entity_id,
+    });
+
+    const db = await getDb();
+    await db.insert(auditLog).values({
+      id: nanoid(),
+      timestamp: new Date(),
+      source: 'webhook',
+      action: `homeassistant.${event}`,
+      integration: 'homeassistant',
+      input: JSON.stringify(payload),
+      level: 'info',
+    });
+
+    return c.json({ success: true });
+  } catch (e) {
+    logger.error('webhook', 'Home Assistant webhook error', e);
+    return c.json({ success: false }, 500);
+  }
+});

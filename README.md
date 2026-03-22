@@ -4,7 +4,7 @@
 
 **The AI brain for your media stack.**
 
-An LLM-powered agent that monitors, controls, and automates your entire Plex/*arr ecosystem — accessible through Telegram, Discord, or a built-in dashboard with AI-generated live widgets.
+An LLM-powered agent that monitors, controls, and automates your entire Plex/*arr ecosystem through a built-in dashboard, Telegram, and an expanding set of chat + automation surfaces.
 
 ---
 
@@ -40,8 +40,8 @@ The installer will:
 
 ## Features
 
-- **Chat with your entire media stack** — "What's playing?" / "Add The Bear to Sonarr" / "Approve all pending requests" / "Why are there no subtitles for X?" via dashboard, Telegram, or Discord
-- **60+ built-in tools** — Health checks, restart, search, add media, download queues, subtitle management, request approvals, indexer stats, and more across 11 integrations
+- **Chat with your entire media stack** — "What's playing?" / "Add The Bear to Sonarr" / "Approve all pending requests" / "Why are there no subtitles for X?" via the dashboard or Telegram today, with more chat surfaces on the roadmap
+- **90+ built-in tools** — Health checks, restart, search, add media, download queues, subtitle management, request approvals, indexer stats, and more across 18 integrations
 - **AI-generated live widgets** — "Build me a widget showing who's watching Plex" → auto-refreshing dashboard widget with real-time data
 - **Automations** — Cron-scheduled tasks: "Check Plex every 5 minutes, restart if down, notify me on Telegram"
 - **Wake hooks** — Agent auto-activates when services go down or receive webhook events
@@ -58,6 +58,7 @@ The installer will:
 |-------------|-------|-------------|
 | **Plex** | 5 | Health check, restart, now playing, libraries, search |
 | **Jellyfin** | 6 | Health check, now playing, libraries, search, recently added, users |
+| **Emby** | 1+ | Early support today; health check is in place and playback/library tooling is a strong next target |
 
 ### Media Management
 | Integration | Tools | Description |
@@ -65,6 +66,8 @@ The installer will:
 | **Radarr** | 5 | Search movies, add by TMDB ID, download queue, calendar, quality profiles |
 | **Sonarr** | 5 | Search shows, add by TVDB ID, download queue, calendar, quality profiles |
 | **Lidarr** | 5 | Search artists, add by MusicBrainz ID, download queue, calendar, quality profiles |
+| **Readarr** | 5 | Search books, add titles, download queue, calendar, quality profiles |
+| **Whisparr** | 5 | Search titles, add content, download queue, calendar, quality profiles |
 | **Bazarr** | 6 | Wanted movies/episodes, subtitle history, manual search, providers, system status |
 
 ### Download Clients
@@ -72,6 +75,10 @@ The installer will:
 |-------------|-------|-------------|
 | **SABnzbd** | 6 | Queue, history, status, pause/resume, add NZB, speed limit |
 | **qBittorrent** | 5 | Torrents list, transfer status, pause/resume, add torrent, speed limit |
+| **Transmission** | 5 | Torrents list, transfer status, pause/resume, add torrent, speed limit |
+| **Deluge** | 5 | Torrents list, transfer status, pause/resume, add torrent, speed limit |
+| **NZBGet** | 4 | Queue, history, status, pause/resume |
+| **Unpackerr** | 1+ | Extraction status today, with room to expand into stuck-unpack diagnostics |
 
 ### Indexers & Requests
 | Integration | Tools | Description |
@@ -84,27 +91,43 @@ The installer will:
 |-------------|-------|-------------|
 | **Tautulli** | 6 | Current activity, watch history, recently added, most watched, users, server info |
 
-### Coming Soon
+Coverage varies by integration, but the goal is simple: Commandarr should understand the entire request → indexer → downloader → importer → subtitles → playback chain, not just individual apps in isolation.
 
-We're building toward full-stack coverage. Planned integrations:
+### High-Impact Integrations To Build Next
 
-- **Readarr** — Book/audiobook management (same *arr API)
-- **Whisparr** — Adult content management (same *arr API)
-- **Mylar3** — Comic book management
-- **Emby** — Alternative media server
-- **Transmission** — Alternative torrent client
-- **Deluge** — Alternative torrent client
-- **NZBGet** — Alternative Usenet client
-- **Unpackerr** — Automated archive extraction
-- **Recyclarr** — TRaSH Guides sync (quality profile automation)
-- **Notifiarr** — Notification aggregation
-- **Nginx Proxy Manager** — Reverse proxy management
-- **Portainer** — Docker container management
-- **Uptime Kuma** — Service uptime monitoring
-- **Watchtower** — Docker image auto-updates
-- **Homepage** — Dashboard data sync
+If the goal is "people in r/selfhosted immediately get why this matters," these are the best next bets:
 
-Community integrations welcome — copy `src/integrations/_template/` and follow the pattern.
+- **Audiobookshelf** — Books and audiobooks are a huge adjacent use case, and it pairs naturally with Readarr
+- **Komga or Kavita** — Manga/comics/ebooks would widen the audience beyond the classic Plex + Sonarr + Radarr stack
+- **Notifiarr** — Lets Commandarr plug into a notification hub the *arr community already trusts
+- **Recyclarr** — Quality profile and custom format sync would make Commandarr useful even when people are not actively chatting with it
+- **Tdarr / FileFlows / Unmanic** — "Why is this transcode job backing up?" is exactly the kind of cross-service AI workflow people remember
+- **Mylar3** — A natural complement to the comics/reading ecosystem
+- **Uptime Kuma** — Strong for service health, incident timelines, and "what changed?" troubleshooting
+- **Portainer** — Gives the agent a safe operational surface for container restarts and deployment visibility
+- **Home Assistant** — Opens the door to richer household automations like quiet hours, power-aware downloads, and presence-based actions
+- **Discord** — Not a media integration, but a big adoption unlock because communities already live there
+
+Community integrations are welcome: copy `src/integrations/_template/` and follow the pattern.
+
+---
+
+## What Would Make Commandarr World-Class
+
+The big opportunity is not just "more tools." It is making the whole stack feel understandable and self-healing.
+
+- **Cross-stack diagnosis** — Answer "why is this missing?" by tracing the full chain from request, to indexer, to downloader, to import, to subtitles, to playback
+- **Safe operator mode** — Dry runs, approval gates, audit logs, and undo-friendly actions so users trust the agent with real admin tasks
+- **Opinionated automations** — Ship prebuilt recipes like "heal Plex," "clear stalled downloads," "nightly subtitle sweep," and "approve requests from trusted users"
+- **Auto-discovery and setup** — Detect common containers/services on the local network and pre-fill integration settings instead of making users hunt for every URL and API key
+- **Shareable widgets and playbooks** — Let the community publish prompts, automations, and dashboard widgets the way Home Assistant users share blueprints
+- **Memory and preferences** — Learn house rules like preferred qualities, quiet hours, request policies, and who gets auto-approved
+- **Event timeline + incident review** — Show a clean narrative of what happened across services when something breaks
+- **Plugin SDK that feels great** — Excellent docs, examples, test harnesses, and a dead-simple packaging flow for community-built integrations
+- **First-class mobile/chat UX** — Telegram is a strong start; Discord, push notifications, and excellent read-only mobile dashboards would multiply daily usage
+- **Recommendations with actionability** — Do not just show stats; suggest fixes, explain tradeoffs, and offer one-tap remediation
+
+If Commandarr becomes the fastest way to understand, fix, and improve a self-hosted media stack, the community will market it for you.
 
 ---
 
