@@ -145,7 +145,7 @@ export default function ChatPage() {
           )}
         </div>
 
-        <div className="flex-1 overflow-hidden bg-slate-900/50 rounded-xl border border-slate-800">
+        <div className="flex-1 flex flex-col min-h-0 bg-slate-900/50 rounded-xl border border-slate-800 overflow-hidden">
           {messages.length === 0 && !streamText && !sending ? (
             <div className="flex flex-col items-center justify-center h-full text-center px-4">
               <div className="text-4xl mb-4">🛰️</div>

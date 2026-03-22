@@ -5,6 +5,47 @@ import { auditLog } from '../db/schema';
 import { logger } from '../utils/logger';
 import { nanoid } from 'nanoid';
 
+// ─── Built-in system tools (not tied to any integration) ────────────
+
+const builtInTools: ToolDefinition[] = [
+  {
+    name: 'commandarr_create_widget',
+    integration: '_system',
+    description: 'Create a dashboard widget from a description. The widget will be generated as HTML/CSS/JS and saved to the dashboard. Use this when the user asks to create, make, or build a widget.',
+    parameters: {
+      type: 'object',
+      properties: {
+        description: {
+          type: 'string',
+          description: 'Description of the widget to create (e.g., "show Plex library sizes as a bar chart")',
+        },
+        name: {
+          type: 'string',
+          description: 'Short name for the widget',
+        },
+      },
+      required: ['description', 'name'],
+    },
+    ui: { category: 'System', dangerLevel: 'low', testable: false },
+    handler: async (params) => {
+      const { generateWidget } = await import('../widgets/generator');
+      try {
+        const widget = await generateWidget(params.description, params.name);
+        return {
+          success: true,
+          message: `Widget "${widget.name}" created and added to your dashboard.`,
+          data: { id: widget.id, name: widget.name },
+        };
+      } catch (e) {
+        return {
+          success: false,
+          message: `Failed to create widget: ${e instanceof Error ? e.message : 'Unknown error'}`,
+        };
+      }
+    },
+  },
+];
+
 /**
  * Registry accessor - dynamically import to avoid circular deps.
  * The registry module must export getLoadedIntegrations().
@@ -45,6 +86,18 @@ export async function executeTool(
   logger.info('agent', `Executing tool: ${toolName}`, params);
 
   try {
+    // Check built-in tools first
+    const builtIn = builtInTools.find(t => t.name === toolName);
+    if (builtIn) {
+      const dummyCtx: ToolContext = {
+        getClient() { throw new Error('Built-in tools do not have integration clients'); },
+        log(msg) { logger.info('agent', `[${toolName}] ${msg}`); },
+      };
+      const result = await builtIn.handler(params, dummyCtx);
+      await logToolExecution(toolName, '_system', params, result, Date.now() - startTime);
+      return result;
+    }
+
     const registry = await getRegistry();
     const integrations = registry.getIntegrations();
 
@@ -54,7 +107,8 @@ export async function executeTool(
     let matchedClient: IntegrationClient | null = null;
 
     for (const integration of integrations) {
-      if (integration.status !== 'healthy') continue;
+      // Allow tools from configured (not just healthy) integrations
+      if (integration.status === 'unconfigured') continue;
 
       const tool = integration.tools.find((t) => t.name === toolName);
       if (tool) {
@@ -162,7 +216,8 @@ async function logToolExecution(
  * Convert internal ToolDefinition[] to LLM-compatible ToolDef[] format.
  */
 export function toolsToLLMFormat(tools: ToolDefinition[]): ToolDef[] {
-  return tools.map((tool) => ({
+  const allTools = [...builtInTools, ...tools];
+  return allTools.map((tool) => ({
     type: 'function' as const,
     function: {
       name: tool.name,
