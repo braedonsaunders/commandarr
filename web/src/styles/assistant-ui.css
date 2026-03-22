@@ -72,6 +72,25 @@
   color: #f3f4f6;
 }
 
+/* ─── Composer input ──────────────────────────────────────────────────── */
+[data-aui-composer-input] {
+  background: transparent;
+  color: #f3f4f6;
+  border: none;
+  outline: none;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  resize: none;
+  min-height: 2.5rem;
+  max-height: 10rem;
+  flex: 1;
+  cursor: text;
+}
+
+[data-aui-composer-input]::placeholder {
+  color: #64748b;
+}
+
 /* ─── Loading indicator ───────────────────────────────────────────────── */
 [data-aui-loading-indicator] {
   color: #f59e0b;
