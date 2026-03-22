@@ -287,7 +287,7 @@ export default function LLMSettingsPage() {
         )}
 
         {/* Provider Configuration Form */}
-        <div className="p-5 bg-slate-900 rounded-xl border border-slate-800 space-y-4">
+        <div className="p-5 bg-slate-900 rounded-xl border border-slate-800 space-y-4 overflow-visible">
           <h2 className="text-sm font-medium text-gray-300 flex items-center gap-2">
             <Plus className="w-4 h-4" />
             {configured.some(c => c.providerId === selectedProviderId) ? 'Edit Provider' : 'Add Provider'}
@@ -312,11 +312,11 @@ export default function LLMSettingsPage() {
           <AnimatePresence>
           {selectedProvider && (
             <motion.div
-              initial={{ height: 0, opacity: 0 }}
-              animate={{ height: 'auto', opacity: 1 }}
-              exit={{ height: 0, opacity: 0 }}
+              initial={{ height: 0, opacity: 0, overflow: 'hidden' }}
+              animate={{ height: 'auto', opacity: 1, overflow: 'visible' }}
+              exit={{ height: 0, opacity: 0, overflow: 'hidden' }}
               transition={{ duration: 0.25, ease: 'easeInOut' }}
-              className="overflow-hidden space-y-4"
+              className="space-y-4"
             >
               {selectedProvider.configSchema.fields
                 .filter(f => f.key !== 'model')
