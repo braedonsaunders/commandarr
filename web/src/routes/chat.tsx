@@ -833,8 +833,6 @@ export default function ChatPage() {
   });
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [initialMessages, setInitialMessages] = useState<ThreadMessageLike[] | undefined>(undefined);
-  const [threadKey, setThreadKey] = useState(0);
   const conversationIdRef = useRef<string | null>(conversationId);
   const hasRestoredRef = useRef(false);
 
@@ -859,17 +857,6 @@ export default function ChatPage() {
           (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
         );
         setConversations(sorted);
-
-        // Restore active conversation on first load
-        if (!hasRestoredRef.current && conversationIdRef.current) {
-          hasRestoredRef.current = true;
-          const activeConv = sorted.find(c => c.id === conversationIdRef.current);
-          if (activeConv && activeConv.messages?.length > 0) {
-            const threadMsgs = convertToThreadMessages(activeConv.messages);
-            setInitialMessages(threadMsgs);
-            setThreadKey(k => k + 1);
-          }
-        }
       })
       .catch(() => {});
   }, []);
@@ -890,18 +877,25 @@ export default function ChatPage() {
 
   const runtime = useLocalRuntime(adapter, {
     maxSteps: 5,
-    initialMessages,
   });
+
+  // ─── Restore active conversation on first load ──────────────────
+  useEffect(() => {
+    if (hasRestoredRef.current || !conversationIdRef.current || conversations.length === 0) return;
+    hasRestoredRef.current = true;
+    const activeConv = conversations.find(c => c.id === conversationIdRef.current);
+    if (activeConv && activeConv.messages?.length > 0) {
+      const threadMsgs = convertToThreadMessages(activeConv.messages);
+      runtime.thread.reset(threadMsgs);
+    }
+  }, [conversations, runtime]);
 
   // ─── Handlers ────────────────────────────────────────────────────
   const handleNewChat = useCallback(() => {
     setConversationId(null);
     conversationIdRef.current = null;
     setSidebarOpen(false);
-    setInitialMessages(undefined);
-    setThreadKey(k => k + 1);
-    // Reset the thread in the runtime to clear displayed messages
-    try { runtime.thread.reset(); } catch { /* ignore if not ready */ }
+    runtime.thread.reset();
   }, [setConversationId, runtime]);
 
   const handleSelectConversation = useCallback((conv: Conversation) => {
@@ -913,9 +907,8 @@ export default function ChatPage() {
 
     // Convert stored messages to ThreadMessageLike format and reload thread
     const threadMsgs = convertToThreadMessages(conv.messages || []);
-    setInitialMessages(threadMsgs);
-    setThreadKey(k => k + 1);
-  }, [setConversationId]);
+    runtime.thread.reset(threadMsgs);
+  }, [setConversationId, runtime]);
 
   const handleDeleteConversation = useCallback((id: string) => {
     fetch(`/api/chat/history/${id}`, { method: 'DELETE' })
@@ -929,7 +922,7 @@ export default function ChatPage() {
   }, [handleNewChat]);
 
   return (
-    <AssistantRuntimeProvider key={threadKey} runtime={runtime}>
+    <AssistantRuntimeProvider runtime={runtime}>
       <div className="flex h-[calc(100vh-8rem)]">
         {/* Conversation sidebar */}
         <ConversationSidebar
