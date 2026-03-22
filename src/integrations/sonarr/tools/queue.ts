@@ -1,6 +1,7 @@
 import type { ToolDefinition } from '../../_base';
 
 interface QueueItem {
+  id: number;
   title: string;
   episodeTitle: string;
   season: number;
@@ -63,6 +64,7 @@ export const tool: ToolDefinition = {
         const episode = record.episode;
 
         items.push({
+          id: record.id,
           title: series?.title ?? record.title ?? 'Unknown',
           episodeTitle: episode?.title ?? 'Unknown',
           season: episode?.seasonNumber ?? 0,
@@ -93,7 +95,7 @@ export const tool: ToolDefinition = {
     const summary = items
       .map(
         (item) =>
-          `- ${item.title} S${String(item.season).padStart(2, '0')}E${String(item.episode).padStart(2, '0')} "${item.episodeTitle}": ${item.status} (${item.progress}%, ${item.sizeleft} remaining${item.eta ? `, ETA: ${item.eta}` : ''})`,
+          `- [ID: ${item.id}] ${item.title} S${String(item.season).padStart(2, '0')}E${String(item.episode).padStart(2, '0')} "${item.episodeTitle}": ${item.status} (${item.progress}%, ${item.sizeleft} remaining${item.eta ? `, ETA: ${item.eta}` : ''})`,
       )
       .join('\n');
 
