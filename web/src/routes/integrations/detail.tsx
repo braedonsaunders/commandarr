@@ -48,7 +48,7 @@ export default function IntegrationDetailPage() {
   const handleSaveCredentials = async (values: Record<string, string>) => {
     setSaving(true);
     try {
-      await fetch(`/api/integrations/${id}/credentials`, {
+      await fetch(`/api/integrations/${id}/creds`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(values),
