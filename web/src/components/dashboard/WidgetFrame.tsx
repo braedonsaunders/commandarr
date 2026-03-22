@@ -67,7 +67,8 @@ export function WidgetFrame({
         switch (method) {
           case 'fetch': {
             const { url, options } = params;
-            const targetUrl = url.startsWith('http') ? url : `${apiBaseUrl}${url}`;
+            // Widget provides full path (e.g. /api/proxy/radarr/...) — don't double-prefix
+            const targetUrl = url.startsWith('http') ? url : (url.startsWith('/api/') ? url : `${apiBaseUrl}${url}`);
             const response = await fetch(targetUrl, options);
             const contentType = response.headers.get('content-type') ?? '';
             const body = contentType.includes('application/json')
@@ -168,7 +169,7 @@ export function WidgetFrame({
       if (type !== 'commandarr.fetch') return;
 
       try {
-        const targetUrl = url.startsWith('http') ? url : `${apiBaseUrl}${url}`;
+        const targetUrl = url.startsWith('http') ? url : (url.startsWith('/api/') ? url : `${apiBaseUrl}${url}`);
         const response = await fetch(targetUrl, options);
         const contentType = response.headers.get('content-type') ?? '';
         const body = contentType.includes('application/json')
