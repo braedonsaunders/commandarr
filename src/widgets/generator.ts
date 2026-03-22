@@ -396,36 +396,93 @@ function sanitizeJs(js: string): string {
 
 // ─── JSON Extraction ─────────────────────────────────────────────────
 
+/**
+ * Find a balanced JSON object starting from a given position.
+ * Handles nested braces and quoted strings correctly.
+ */
+function findBalancedJson(text: string, startIdx: number): string | null {
+  if (text[startIdx] !== '{') return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = startIdx; i < text.length; i++) {
+    const ch = text[i];
+
+    if (escape) {
+      escape = false;
+      continue;
+    }
+
+    if (ch === '\\' && inString) {
+      escape = true;
+      continue;
+    }
+
+    if (ch === '"' && !escape) {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        return text.substring(startIdx, i + 1);
+      }
+    }
+  }
+
+  return null;
+}
+
 function extractJson(raw: string): unknown {
   // Try raw JSON parse first
   try {
     return JSON.parse(raw);
   } catch { /* continue */ }
 
-  // Try markdown code fence (greedy to capture full JSON with nested braces)
-  const fenceMatch = raw.match(/```(?:json)?\s*\n([\s\S]*)\n```/);
-  if (fenceMatch) {
+  // Try each markdown code fence individually (there may be multiple)
+  const fenceRegex = /```(?:json)?\s*\n([\s\S]*?)\n```/g;
+  let fenceMatch;
+  while ((fenceMatch = fenceRegex.exec(raw)) !== null) {
     const content = fenceMatch[1]!.trim();
     try {
       return JSON.parse(content);
     } catch { /* continue */ }
-    // The greedy match may have captured too much — try brace matching within it
-    const firstBrace = content.indexOf('{');
-    const lastBrace = content.lastIndexOf('}');
-    if (firstBrace !== -1 && lastBrace > firstBrace) {
-      try {
-        return JSON.parse(content.substring(firstBrace, lastBrace + 1));
-      } catch { /* continue */ }
+    // Try balanced brace extraction within the fence
+    const braceIdx = content.indexOf('{');
+    if (braceIdx !== -1) {
+      const balanced = findBalancedJson(content, braceIdx);
+      if (balanced) {
+        try {
+          return JSON.parse(balanced);
+        } catch { /* continue */ }
+      }
     }
   }
 
-  // Try to find JSON object boundaries in the raw text
-  const firstBrace = raw.indexOf('{');
-  const lastBrace = raw.lastIndexOf('}');
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
-    try {
-      return JSON.parse(raw.substring(firstBrace, lastBrace + 1));
-    } catch { /* continue */ }
+  // Try to find each top-level JSON object in the raw text using balanced brace matching
+  let searchFrom = 0;
+  while (searchFrom < raw.length) {
+    const braceIdx = raw.indexOf('{', searchFrom);
+    if (braceIdx === -1) break;
+
+    const balanced = findBalancedJson(raw, braceIdx);
+    if (balanced && balanced.length > 100) {
+      // Only try objects that are large enough to be a widget definition
+      try {
+        const parsed = JSON.parse(balanced);
+        // Verify it looks like a widget (has html or js field)
+        if (parsed && typeof parsed === 'object' && ('html' in parsed || 'js' in parsed)) {
+          return parsed;
+        }
+      } catch { /* continue */ }
+    }
+
+    searchFrom = braceIdx + 1;
   }
 
   throw new Error('Could not extract JSON from LLM response');
