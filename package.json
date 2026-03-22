@@ -1,6 +1,6 @@
 {
   "name": "commandarr",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "The AI brain for your media stack",
   "type": "module",
   "scripts": {

@@ -91,7 +91,7 @@ export default function GeneralSettingsPage() {
         <div className="p-6 bg-slate-900 rounded-xl border border-slate-800">
           <h2 className="text-lg font-semibold text-gray-100 mb-3">About</h2>
           <div className="space-y-1 text-sm text-gray-400">
-            <p>Commandarr v1.0.0</p>
+            <p>Commandarr v1.0.1</p>
             <p>The AI brain for your media stack</p>
             <a href="https://github.com/braedonsaunders/commandarr" target="_blank" rel="noreferrer" className="text-amber-400 hover:text-amber-300">
               GitHub Repository

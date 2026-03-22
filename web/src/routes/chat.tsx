@@ -182,6 +182,11 @@ function convertToThreadMessages(messages: StoredMessage[]): ThreadMessageLike[]
   return result;
 }
 
+function hasPendingAssistantReply(messages: StoredMessage[] | undefined): boolean {
+  if (!messages || messages.length === 0) return false;
+  return messages[messages.length - 1]?.role === 'user';
+}
+
 // ─── Sidebar ─────────────────────────────────────────────────────────
 
 interface ConversationSidebarProps {
@@ -802,7 +807,21 @@ function ComposerDraftPersistence() {
   return null;
 }
 
-function ChatThread() {
+function TypingIndicator() {
+  return (
+    <div className="flex justify-start px-4 py-1.5">
+      <div className="bg-slate-800 rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-1.5">
+        <div className="flex gap-1">
+          <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
+          <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
+          <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ChatThread({ showPersistedTypingIndicator = false }: { showPersistedTypingIndicator?: boolean }) {
   return (
     <ThreadPrimitive.Root className="flex flex-col h-full">
       <ComposerDraftPersistence />
@@ -820,16 +839,13 @@ function ChatThread() {
 
         {/* Typing indicator */}
         <ThreadPrimitive.If running>
-          <div className="flex justify-start px-4 py-1.5">
-            <div className="bg-slate-800 rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-1.5">
-              <div className="flex gap-1">
-                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
-                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
-                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" />
-              </div>
-            </div>
-          </div>
+          <TypingIndicator />
         </ThreadPrimitive.If>
+        {showPersistedTypingIndicator && (
+          <ThreadPrimitive.If running={false}>
+            <TypingIndicator />
+          </ThreadPrimitive.If>
+        )}
       </ThreadPrimitive.Viewport>
 
       <div className="p-3 border-t border-slate-800/50 bg-slate-950/50">
@@ -871,6 +887,7 @@ export default function ChatPage() {
   const conversationIdRef = useRef<string | null>(conversationId);
   const hasRestoredRef = useRef(false);
   const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [showPersistedTypingIndicator, setShowPersistedTypingIndicator] = useState(false);
 
   // Keep ref in sync
   conversationIdRef.current = conversationId;
@@ -929,6 +946,13 @@ export default function ChatPage() {
     };
   }, []);
 
+  const stopPendingPoll = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  }, []);
+
   // ─── Chat model adapter ──────────────────────────────────────────
   const adapter = useMemo(
     () => createChatModelAdapter(
@@ -943,93 +967,79 @@ export default function ChatPage() {
     maxSteps: 5,
   });
 
+  const restoreConversationState = useCallback((targetId: string, fallbackMessages: StoredMessage[] = []) => {
+    stopPendingPoll();
+
+    const applyConversation = (messages: StoredMessage[]) => {
+      if (conversationIdRef.current !== targetId) return;
+
+      runtime.thread.reset(convertToThreadMessages(messages));
+
+      const isPending = hasPendingAssistantReply(messages);
+      setShowPersistedTypingIndicator(isPending);
+
+      if (!isPending) return;
+
+      let attempts = 0;
+      pollTimerRef.current = setInterval(() => {
+        attempts++;
+
+        if (conversationIdRef.current !== targetId || attempts > 30) {
+          stopPendingPoll();
+          return;
+        }
+
+        fetch(`/api/chat/history/${targetId}`)
+          .then(r => r.ok ? r.json() : null)
+          .then((updated: Conversation | null) => {
+            if (!updated?.messages || conversationIdRef.current !== targetId) return;
+
+            if (!hasPendingAssistantReply(updated.messages)) {
+              runtime.thread.reset(convertToThreadMessages(updated.messages));
+              setShowPersistedTypingIndicator(false);
+              stopPendingPoll();
+            }
+          })
+          .catch(() => {});
+      }, 2000);
+    };
+
+    fetch(`/api/chat/history/${targetId}`)
+      .then(r => r.ok ? r.json() : null)
+      .then((fresh: Conversation | null) => applyConversation(fresh?.messages || fallbackMessages))
+      .catch(() => applyConversation(fallbackMessages));
+  }, [runtime, stopPendingPoll]);
+
   // ─── Restore active conversation on first load ──────────────────
   useEffect(() => {
     if (hasRestoredRef.current || !conversationIdRef.current || conversations.length === 0) return;
     hasRestoredRef.current = true;
     const activeConv = conversations.find(c => c.id === conversationIdRef.current);
-    if (activeConv && activeConv.messages?.length > 0) {
-      const threadMsgs = convertToThreadMessages(activeConv.messages);
-      runtime.thread.reset(threadMsgs);
+    if (activeConv) {
+      restoreConversationState(activeConv.id, activeConv.messages || []);
     }
-  }, [conversations, runtime]);
+  }, [conversations, restoreConversationState]);
 
   // ─── Handlers ────────────────────────────────────────────────────
   const handleNewChat = useCallback(() => {
-    if (pollTimerRef.current) {
-      clearInterval(pollTimerRef.current);
-      pollTimerRef.current = null;
-    }
+    stopPendingPoll();
+    setShowPersistedTypingIndicator(false);
     setConversationId(null);
     conversationIdRef.current = null;
     setSidebarOpen(false);
     runtime.thread.reset();
-  }, [setConversationId, runtime]);
+  }, [setConversationId, runtime, stopPendingPoll]);
 
   const handleSelectConversation = useCallback((conv: Conversation) => {
     if (conv.id === conversationIdRef.current) return;
 
-    // Clear any existing poll for a previous conversation
-    if (pollTimerRef.current) {
-      clearInterval(pollTimerRef.current);
-      pollTimerRef.current = null;
-    }
-
+    stopPendingPoll();
+    setShowPersistedTypingIndicator(false);
     setConversationId(conv.id);
     conversationIdRef.current = conv.id;
     setSidebarOpen(false);
-
-    // Fetch fresh conversation data to pick up any messages saved during streaming
-    fetch(`/api/chat/history/${conv.id}`)
-      .then(r => r.ok ? r.json() : null)
-      .then((fresh: Conversation | null) => {
-        const messages = fresh?.messages || conv.messages || [];
-        const threadMsgs = convertToThreadMessages(messages);
-        runtime.thread.reset(threadMsgs);
-
-        // If the last message is from the user, the assistant response may still
-        // be processing on the backend. Poll until it appears.
-        const lastMsg = messages[messages.length - 1];
-        if (lastMsg && lastMsg.role === 'user') {
-          const targetId = conv.id;
-          let attempts = 0;
-          pollTimerRef.current = setInterval(() => {
-            attempts++;
-            // Stop polling after 60 seconds or if user switched away
-            if (attempts > 30 || conversationIdRef.current !== targetId) {
-              if (pollTimerRef.current) {
-                clearInterval(pollTimerRef.current);
-                pollTimerRef.current = null;
-              }
-              return;
-            }
-            fetch(`/api/chat/history/${targetId}`)
-              .then(r => r.ok ? r.json() : null)
-              .then((updated: Conversation | null) => {
-                if (!updated?.messages?.length) return;
-                const updatedLast = updated.messages[updated.messages.length - 1];
-                if (updatedLast && updatedLast.role === 'assistant') {
-                  // Response arrived - update thread and stop polling
-                  if (conversationIdRef.current === targetId) {
-                    const updatedThreadMsgs = convertToThreadMessages(updated.messages);
-                    runtime.thread.reset(updatedThreadMsgs);
-                  }
-                  if (pollTimerRef.current) {
-                    clearInterval(pollTimerRef.current);
-                    pollTimerRef.current = null;
-                  }
-                }
-              })
-              .catch(() => {});
-          }, 2000);
-        }
-      })
-      .catch(() => {
-        // Fallback to cached data
-        const threadMsgs = convertToThreadMessages(conv.messages || []);
-        runtime.thread.reset(threadMsgs);
-      });
-  }, [setConversationId, runtime]);
+    restoreConversationState(conv.id, conv.messages || []);
+  }, [restoreConversationState, setConversationId, stopPendingPoll]);
 
   const handleDeleteConversation = useCallback((id: string) => {
     fetch(`/api/chat/history/${id}`, { method: 'DELETE' })
@@ -1074,7 +1084,7 @@ export default function ChatPage() {
           </div>
 
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-            <ChatThread />
+            <ChatThread showPersistedTypingIndicator={showPersistedTypingIndicator} />
           </div>
         </div>
       </div>
