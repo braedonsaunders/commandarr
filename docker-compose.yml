@@ -19,5 +19,8 @@ services:
       # Chat platforms (optional)
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
-      # Plex restart command (optional)
+      # Plex restart - Commandarr Helper (recommended, runs on host)
+      - HELPER_URL=${HELPER_URL:-}
+      - HELPER_TOKEN=${HELPER_TOKEN:-}
+      # Plex restart - direct command (alternative, only works if Plex is in same container)
       - PLEX_RESTART_COMMAND=${PLEX_RESTART_COMMAND:-}
