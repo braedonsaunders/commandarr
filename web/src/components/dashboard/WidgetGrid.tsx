@@ -1,6 +1,14 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { GripVertical, Maximize2, Trash2, MoreVertical, Lock, Unlock } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  GripVertical,
+  Maximize2,
+  Minimize2,
+  Trash2,
+  Lock,
+  Unlock,
+  X,
+} from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { WidgetFrame } from './WidgetFrame';
 import {
@@ -79,6 +87,7 @@ export function WidgetGrid({
   const [gesture, setGesture] = useState<GestureState | null>(null);
   const [widgetStatuses, setWidgetStatuses] = useState<Record<string, string>>({});
   const [readyWidgets, setReadyWidgets] = useState<Set<string>>(new Set());
+  const [fullscreenItemId, setFullscreenItemId] = useState<string | null>(null);
 
   // Resolve layout with collision detection
   const gridItems: DashboardGridItem[] = items.map((item) => ({
@@ -101,6 +110,26 @@ export function WidgetGrid({
   const gridHeight = maxRowEnd > 0
     ? maxRowEnd * GRID_ROW_HEIGHT_PX + (maxRowEnd - 1) * GRID_GAP_PX + GRID_GAP_PX
     : 400;
+
+  // ─── Fullscreen escape key ────────────────────────────────────────
+  useEffect(() => {
+    if (!fullscreenItemId) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setFullscreenItemId(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fullscreenItemId]);
+
+  // Lock body scroll when fullscreen
+  useEffect(() => {
+    if (fullscreenItemId) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [fullscreenItemId]);
 
   // ─── Grid Coordinate Helpers ─────────────────────────────────────
 
@@ -248,6 +277,12 @@ export function WidgetGrid({
     setGesture(null);
   }, [gesture, onMoveItem, onResizeItem]);
 
+  // ─── Fullscreen Overlay ───────────────────────────────────────────
+
+  const fullscreenItem = fullscreenItemId
+    ? items.find((item) => item.id === fullscreenItemId)
+    : null;
+
   // ─── Render ──────────────────────────────────────────────────────
 
   return (
@@ -354,8 +389,18 @@ export function WidgetGrid({
                   <span className="ml-auto truncate text-xs text-gray-500">{status}</span>
                 )}
 
-                {/* Actions */}
+                {/* Actions — always visible on hover */}
                 <div className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  {/* Fullscreen */}
+                  <button
+                    onClick={() => setFullscreenItemId(item.id)}
+                    className="rounded p-1 text-gray-500 hover:bg-slate-700 hover:text-gray-300 transition-colors"
+                    title="Fullscreen"
+                  >
+                    <Maximize2 size={12} />
+                  </button>
+
+                  {/* Remove (edit mode only) */}
                   {onRemoveItem && editMode && (
                     <button
                       onClick={() => onRemoveItem(item.id)}
@@ -390,13 +435,18 @@ export function WidgetGrid({
               {/* Resize handle (edit mode) */}
               {editMode && (
                 <div
-                  className="absolute bottom-0 right-0 z-10 h-5 w-5 cursor-se-resize"
+                  className="absolute bottom-0 right-0 z-10 h-6 w-6 cursor-se-resize flex items-end justify-end p-1"
                   onPointerDown={(e) => handleResizeStart(e, item)}
                 >
-                  <Maximize2
-                    size={12}
-                    className="absolute bottom-1 right-1 rotate-90 text-gray-600"
-                  />
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 10 10"
+                    className="text-gray-600"
+                  >
+                    <path d="M9 1v8H1" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    <path d="M9 5v4H5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
                 </div>
               )}
             </motion.div>
@@ -412,6 +462,58 @@ export function WidgetGrid({
           </p>
         </div>
       )}
+
+      {/* ─── Fullscreen Overlay ──────────────────────────────────────── */}
+      <AnimatePresence>
+        {fullscreenItem && (
+          <motion.div
+            className="fixed inset-0 z-50 flex flex-col bg-slate-950/95 backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            {/* Fullscreen title bar */}
+            <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900 px-4 py-2.5">
+              <span className="text-sm font-medium text-gray-200">
+                {fullscreenItem.title ?? fullscreenItem.widget.widgetName}
+              </span>
+              <div className="flex items-center gap-2">
+                {widgetStatuses[fullscreenItem.id] && (
+                  <span className="text-xs text-gray-500">
+                    {widgetStatuses[fullscreenItem.id]}
+                  </span>
+                )}
+                <button
+                  onClick={() => setFullscreenItemId(null)}
+                  className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-medium text-gray-400 hover:text-gray-200 bg-slate-800 hover:bg-slate-700 border border-slate-700 transition-colors"
+                >
+                  <Minimize2 size={14} />
+                  Exit
+                </button>
+              </div>
+            </div>
+
+            {/* Fullscreen widget content */}
+            <div className="flex-1 min-h-0">
+              <WidgetFrame
+                widgetId={fullscreenItem.widgetId}
+                html={fullscreenItem.html ?? ''}
+                css={fullscreenItem.css}
+                js={fullscreenItem.js}
+                title={fullscreenItem.title ?? fullscreenItem.widget.widgetName}
+                capabilities={fullscreenItem.widget.capabilities}
+                controls={fullscreenItem.controls}
+                className="h-full rounded-none border-0"
+                onReady={() => setReadyWidgets((prev) => new Set(prev).add(fullscreenItem.id))}
+                onStatus={(text) =>
+                  setWidgetStatuses((prev) => ({ ...prev, [fullscreenItem.id]: text }))
+                }
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

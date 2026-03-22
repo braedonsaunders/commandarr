@@ -11,6 +11,7 @@ import type {
   ToolContext,
   ToolResult,
   LoadedIntegration,
+  PrebuiltWidgetDef,
 } from './_base';
 
 const integrations = new Map<string, LoadedIntegration>();
@@ -51,13 +52,31 @@ export async function initRegistry(): Promise<void> {
         // No tools directory or empty
       }
 
+      // Auto-discover prebuilt widgets shipped with this integration
+      const integrationWidgets: PrebuiltWidgetDef[] = [];
+      const widgetsDir = join(integrationDir, 'widgets');
+
+      try {
+        const widgetFiles = await readdir(widgetsDir);
+        for (const widgetFile of widgetFiles) {
+          if (!widgetFile.endsWith('.ts')) continue;
+          const widgetModule = await import(join(widgetsDir, widgetFile));
+          if (widgetModule.widget) {
+            integrationWidgets.push(widgetModule.widget);
+          }
+        }
+      } catch {
+        // No widgets directory — that's fine, it's optional
+      }
+
       const creds = await getCredentials(manifest.id);
       const status = creds ? 'configured' : 'unconfigured';
 
-      integrations.set(manifest.id, { id: manifest.id, manifest, tools, createClient, status });
+      integrations.set(manifest.id, { id: manifest.id, manifest, tools, widgets: integrationWidgets, createClient, status });
+      const widgetCount = integrationWidgets.length;
       logger.info(
         'integration',
-        `Loaded integration: ${manifest.name} (${tools.length} tools)`,
+        `Loaded integration: ${manifest.name} (${tools.length} tools${widgetCount ? `, ${widgetCount} widgets` : ''})`,
       );
     } catch (err) {
       logger.error(
@@ -96,6 +115,10 @@ export function getIntegrations(): LoadedIntegration[] {
 
 export function getIntegration(id: string): LoadedIntegration | undefined {
   return integrations.get(id);
+}
+
+export function getIntegrationWidgets(): PrebuiltWidgetDef[] {
+  return Array.from(integrations.values()).flatMap((i) => i.widgets);
 }
 
 export function getTools(integrationId?: string): ToolDefinition[] {

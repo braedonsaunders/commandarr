@@ -1,5 +1,7 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import {
   Plus, X, MessageSquare, PanelLeftOpen, PanelLeftClose,
   CheckCircle2, XCircle, ChevronDown, Loader2, Activity,
@@ -11,17 +13,29 @@ import {
   ThreadPrimitive,
   MessagePrimitive,
   ComposerPrimitive,
-  useAssistantToolUI,
   type ChatModelAdapter,
   type ChatModelRunResult,
+  type ThreadMessageLike,
 } from '@assistant-ui/react';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
+interface StoredMessage {
+  role: string;
+  content: string;
+  tool_calls?: Array<{
+    id: string;
+    type: string;
+    function: { name: string; arguments: string };
+  }>;
+  tool_call_id?: string;
+  name?: string;
+}
+
 interface Conversation {
   id: string;
   platform: string;
-  messages: { role: string; content: string }[];
+  messages: StoredMessage[];
   createdAt: string;
   updatedAt: string;
 }
@@ -31,7 +45,9 @@ interface GroupedConversations {
   conversations: Conversation[];
 }
 
-// ─── Tool icon/label metadata (reused from ToolCallCard) ─────────────
+// ─── Constants ───────────────────────────────────────────────────────
+
+const STORAGE_KEY = 'commandarr_active_conversation';
 
 const TOOL_META: Record<string, { color: string; label: string }> = {
   plex_health_check:  { color: '#E5A00D', label: 'Plex Health Check' },
@@ -102,6 +118,67 @@ function groupConversations(conversations: Conversation[]): GroupedConversations
   return ['Today', 'Yesterday', 'Previous 7 days', 'Older']
     .filter(label => groups[label].length > 0)
     .map(label => ({ label, conversations: groups[label] }));
+}
+
+/** Convert stored DB messages into ThreadMessageLike format for assistant-ui */
+function convertToThreadMessages(messages: StoredMessage[]): ThreadMessageLike[] {
+  const result: ThreadMessageLike[] = [];
+
+  for (let i = 0; i < messages.length; i++) {
+    const msg = messages[i];
+
+    if (msg.role === 'user') {
+      result.push({ role: 'user', content: msg.content });
+    } else if (msg.role === 'assistant') {
+      if (msg.tool_calls && msg.tool_calls.length > 0) {
+        // Assistant message with tool calls - build content parts
+        const contentParts: Array<any> = [];
+
+        for (const tc of msg.tool_calls) {
+          let args: Record<string, unknown> = {};
+          try { args = JSON.parse(tc.function.arguments || '{}'); } catch { /* empty */ }
+
+          // Find the corresponding tool result message
+          const toolResultMsg = messages.slice(i + 1).find(
+            m => m.role === 'tool' && m.tool_call_id === tc.id
+          );
+
+          let tcResult: unknown = undefined;
+          if (toolResultMsg) {
+            try { tcResult = JSON.parse(toolResultMsg.content); } catch { tcResult = toolResultMsg.content; }
+          }
+
+          contentParts.push({
+            type: 'tool-call' as const,
+            toolCallId: tc.id,
+            toolName: tc.function.name,
+            args,
+            result: tcResult,
+            isError: false,
+          });
+        }
+
+        if (msg.content) {
+          contentParts.push({ type: 'text' as const, text: msg.content });
+        }
+
+        result.push({
+          role: 'assistant',
+          content: contentParts,
+          status: { type: 'complete', reason: 'stop' },
+        });
+      } else {
+        result.push({
+          role: 'assistant',
+          content: msg.content,
+          status: { type: 'complete', reason: 'stop' },
+        });
+      }
+    }
+    // Skip 'tool' messages - they're consumed by the assistant message above
+  }
+
+  return result;
 }
 
 // ─── Sidebar ─────────────────────────────────────────────────────────
@@ -265,8 +342,6 @@ type QueueItem =
   | { kind: 'close' }
   | { kind: 'error'; error: string };
 
-// We store the current conversation ID in a ref accessible to the adapter.
-// The adapter factory is re-created when the conversation ID changes.
 function createChatModelAdapter(
   conversationIdRef: React.MutableRefObject<string | null>,
   setConversationId: (id: string) => void,
@@ -274,7 +349,6 @@ function createChatModelAdapter(
 ): ChatModelAdapter {
   return {
     async *run({ messages, abortSignal }): AsyncGenerator<ChatModelRunResult, void> {
-      // Extract the last user message text
       const lastUserMessage = [...messages].reverse().find(m => m.role === 'user');
       if (!lastUserMessage) return;
 
@@ -290,7 +364,6 @@ function createChatModelAdapter(
 
       if (!userText) return;
 
-      // Open WebSocket
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const convParam = conversationIdRef.current
         ? `?conversationId=${conversationIdRef.current}`
@@ -299,14 +372,12 @@ function createChatModelAdapter(
         `${protocol}//${window.location.host}/ws/chat${convParam}`
       );
 
-      // Track accumulated state
       let fullText = '';
       const toolCalls: ToolCallPart[] = [];
       let toolCallCounter = 0;
       let done = false;
       let error: string | null = null;
 
-      // Create a promise-based message queue
       const queue: QueueItem[] = [];
       let resolveWait: (() => void) | null = null;
 
@@ -348,7 +419,6 @@ function createChatModelAdapter(
         enqueue({ kind: 'error', error: 'WebSocket connection error' });
       };
 
-      // Handle abort
       const onAbort = () => {
         ws.close();
         enqueue({ kind: 'close' });
@@ -431,15 +501,12 @@ function createChatModelAdapter(
             }
           }
 
-          // Build content parts for current state
           const contentParts: Array<{ type: 'text'; text: string } | ToolCallPart> = [];
 
-          // Add tool calls first
           for (const tc of toolCalls) {
             contentParts.push(tc);
           }
 
-          // Add text
           if (fullText) {
             contentParts.push({ type: 'text', text: fullText });
           }
@@ -455,7 +522,6 @@ function createChatModelAdapter(
           }
         }
 
-        // Final yield if we exited with error and haven't yielded yet
         if (error && fullText === '' && toolCalls.length === 0) {
           yield {
             content: [{ type: 'text' as const, text: `Error: ${error}` }] as unknown as ChatModelRunResult['content'],
@@ -481,7 +547,7 @@ function ToolCallFallbackUI({ toolName, args, result, isError }: {
   isError?: boolean;
   addResult: (result: unknown) => void;
 }) {
-  const [expanded, setExpanded] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const meta = getToolMeta(toolName);
   const hasResult = result !== undefined;
 
@@ -489,26 +555,25 @@ function ToolCallFallbackUI({ toolName, args, result, isError }: {
     <div
       className={cn(
         'rounded-xl border overflow-hidden my-2',
-        isError ? 'border-red-500/30 bg-red-500/5' : 'border-slate-700/50 bg-slate-850',
+        isError ? 'border-red-500/30 bg-red-950/30' : 'border-slate-700/50 bg-slate-800/50',
       )}
     >
-      {/* Header */}
       <button
         type="button"
         onClick={() => setExpanded(prev => !prev)}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-800/30 transition-colors"
+        className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-slate-800/30 transition-colors"
       >
         <div
           className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
           style={{ backgroundColor: `${meta.color}15` }}
         >
-          <Activity className="w-4 h-4" style={{ color: meta.color }} />
+          <Activity className="w-3.5 h-3.5" style={{ color: meta.color }} />
         </div>
 
         <div className="flex-1 min-w-0">
-          <div className="text-sm font-medium text-gray-200">{meta.label}</div>
+          <div className="text-xs font-medium text-gray-300">{meta.label}</div>
           {Object.keys(args).length > 0 && (
-            <div className="text-xs text-gray-500 truncate">
+            <div className="text-[11px] text-gray-500 truncate">
               {Object.entries(args).map(([k, v]) => `${k}: ${v}`).join(' \u00b7 ')}
             </div>
           )}
@@ -524,17 +589,16 @@ function ToolCallFallbackUI({ toolName, args, result, isError }: {
 
         <ChevronDown
           className={cn(
-            'w-4 h-4 text-gray-500 transition-transform shrink-0',
+            'w-3.5 h-3.5 text-gray-500 transition-transform shrink-0',
             expanded && 'rotate-180'
           )}
         />
       </button>
 
-      {/* Result body */}
       {expanded && hasResult && (
-        <div className="border-t border-slate-800/50 px-4 py-3">
+        <div className="border-t border-slate-700/50 px-4 py-3">
           {typeof result === 'object' && result !== null ? (
-            <pre className="overflow-x-auto rounded bg-slate-800/50 p-2 text-xs text-gray-400 font-mono max-h-48 overflow-y-auto">
+            <pre className="overflow-x-auto rounded-lg bg-slate-900/50 p-2.5 text-xs text-gray-400 font-mono max-h-48 overflow-y-auto">
               {JSON.stringify(result, null, 2)}
             </pre>
           ) : (
@@ -546,11 +610,66 @@ function ToolCallFallbackUI({ toolName, args, result, isError }: {
   );
 }
 
+// ─── Markdown Component ──────────────────────────────────────────────
+
+function MarkdownContent({ text }: { text: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkGfm]}
+      components={{
+        p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
+        strong: ({ children }) => <strong className="font-semibold text-gray-50">{children}</strong>,
+        em: ({ children }) => <em className="italic">{children}</em>,
+        ul: ({ children }) => <ul className="list-disc list-inside mb-2 space-y-0.5">{children}</ul>,
+        ol: ({ children }) => <ol className="list-decimal list-inside mb-2 space-y-0.5">{children}</ol>,
+        li: ({ children }) => <li className="text-gray-200">{children}</li>,
+        code: ({ className, children, ...props }) => {
+          const isInline = !className;
+          if (isInline) {
+            return (
+              <code className="bg-slate-700/50 text-amber-300 px-1.5 py-0.5 rounded text-[13px] font-mono" {...props}>
+                {children}
+              </code>
+            );
+          }
+          return (
+            <code className={cn('block bg-slate-900/60 rounded-lg p-3 text-[13px] font-mono text-gray-300 overflow-x-auto my-2', className)} {...props}>
+              {children}
+            </code>
+          );
+        },
+        pre: ({ children }) => <pre className="my-2">{children}</pre>,
+        a: ({ href, children }) => (
+          <a href={href} target="_blank" rel="noopener noreferrer" className="text-amber-400 hover:text-amber-300 underline underline-offset-2">
+            {children}
+          </a>
+        ),
+        h1: ({ children }) => <h1 className="text-lg font-bold text-gray-50 mb-2 mt-3 first:mt-0">{children}</h1>,
+        h2: ({ children }) => <h2 className="text-base font-bold text-gray-50 mb-1.5 mt-3 first:mt-0">{children}</h2>,
+        h3: ({ children }) => <h3 className="text-sm font-bold text-gray-100 mb-1 mt-2 first:mt-0">{children}</h3>,
+        blockquote: ({ children }) => (
+          <blockquote className="border-l-2 border-amber-500/50 pl-3 my-2 text-gray-400 italic">{children}</blockquote>
+        ),
+        hr: () => <hr className="border-slate-700 my-3" />,
+        table: ({ children }) => (
+          <div className="overflow-x-auto my-2">
+            <table className="min-w-full text-sm border-collapse">{children}</table>
+          </div>
+        ),
+        th: ({ children }) => <th className="border border-slate-700 px-3 py-1.5 text-left font-semibold text-gray-200 bg-slate-800/50">{children}</th>,
+        td: ({ children }) => <td className="border border-slate-700 px-3 py-1.5 text-gray-300">{children}</td>,
+      }}
+    >
+      {text}
+    </ReactMarkdown>
+  );
+}
+
 // ─── Custom Message Components ───────────────────────────────────────
 
 function UserMessage() {
   return (
-    <div className="flex justify-end px-4 py-2">
+    <div className="flex justify-end px-4 py-1.5">
       <div className="max-w-[80%] bg-amber-500 text-slate-950 rounded-2xl rounded-br-sm px-4 py-2.5 font-medium text-sm">
         <MessagePrimitive.Content
           components={{
@@ -564,13 +683,13 @@ function UserMessage() {
 
 function AssistantMessage() {
   return (
-    <div className="flex justify-start px-4 py-2">
+    <div className="flex justify-start px-4 py-1.5">
       <div className="max-w-[85%]">
         <MessagePrimitive.Content
           components={{
             Text: ({ text }) => (
-              <div className="bg-slate-800 text-gray-100 rounded-2xl rounded-bl-sm px-4 py-2.5 text-sm">
-                <p className="whitespace-pre-wrap leading-relaxed">{text}</p>
+              <div className="bg-slate-800 text-gray-100 rounded-2xl rounded-bl-sm px-4 py-3 text-sm leading-relaxed">
+                <MarkdownContent text={text} />
               </div>
             ),
             tools: {
@@ -595,9 +714,11 @@ const QUICK_ACTIONS = [
 function WelcomeScreen() {
   return (
     <div className="flex flex-col items-center justify-center h-full text-center px-4">
-      <div className="text-4xl mb-4">&#x1F6F0;&#xFE0F;</div>
+      <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-amber-500/20 to-amber-600/10 flex items-center justify-center mb-4 border border-amber-500/20">
+        <MessageSquare className="w-7 h-7 text-amber-500" />
+      </div>
       <h2 className="text-xl font-semibold text-gray-200 mb-2">Commandarr</h2>
-      <p className="text-gray-400 mb-6 max-w-md">
+      <p className="text-gray-400 mb-6 max-w-md text-sm">
         Ask me anything about your media stack. I can check what&apos;s playing,
         manage downloads, add movies and shows, and more.
       </p>
@@ -610,12 +731,12 @@ function WelcomeScreen() {
             asChild
           >
             <motion.button
-              className="px-3 py-2 text-sm bg-slate-800 hover:bg-slate-700 text-gray-300 rounded-lg border border-slate-700 transition-colors"
+              className="px-3 py-2 text-sm bg-slate-800 hover:bg-slate-700 text-gray-300 rounded-xl border border-slate-700/50 transition-colors"
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.05, duration: 0.3 }}
-              whileHover={{ scale: 1.03 }}
-              whileTap={{ scale: 0.97 }}
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
             >
               {action}
             </motion.button>
@@ -629,12 +750,6 @@ function WelcomeScreen() {
 // ─── Thread Component ────────────────────────────────────────────────
 
 function ChatThread() {
-  // Register a fallback tool UI so all tool calls render with our component
-  useAssistantToolUI({
-    toolName: '*',
-    render: ToolCallFallbackUI,
-  });
-
   return (
     <ThreadPrimitive.Root className="flex flex-col h-full">
       <ThreadPrimitive.Viewport className="flex-1 overflow-y-auto">
@@ -648,10 +763,23 @@ function ChatThread() {
             AssistantMessage,
           }}
         />
+
+        {/* Typing indicator */}
+        <ThreadPrimitive.If running>
+          <div className="flex justify-start px-4 py-1.5">
+            <div className="bg-slate-800 rounded-2xl rounded-bl-sm px-4 py-3 flex items-center gap-1.5">
+              <div className="flex gap-1">
+                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.3s]" />
+                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce [animation-delay:-0.15s]" />
+                <span className="w-1.5 h-1.5 bg-gray-400 rounded-full animate-bounce" />
+              </div>
+            </div>
+          </div>
+        </ThreadPrimitive.If>
       </ThreadPrimitive.Viewport>
 
-      <div className="p-4 border-t border-slate-800">
-        <ComposerPrimitive.Root className="flex items-end gap-2 bg-slate-800 border border-slate-700 rounded-xl px-3 py-2">
+      <div className="p-3 border-t border-slate-800/50 bg-slate-950/50">
+        <ComposerPrimitive.Root className="flex items-end gap-2 bg-slate-800/80 border border-slate-700/50 rounded-xl px-3 py-2 focus-within:border-amber-500/30 transition-colors">
           <ComposerPrimitive.Input
             placeholder="Ask about your media stack..."
             className="flex-1 bg-transparent text-gray-100 text-sm outline-none resize-none min-h-[2.5rem] max-h-[10rem] placeholder:text-slate-500"
@@ -681,13 +809,27 @@ function ChatThread() {
 // ─── Chat Page ───────────────────────────────────────────────────────
 
 export default function ChatPage() {
-  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [conversationId, setConversationIdState] = useState<string | null>(() => {
+    try { return localStorage.getItem(STORAGE_KEY); } catch { return null; }
+  });
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const conversationIdRef = useRef<string | null>(null);
+  const [initialMessages, setInitialMessages] = useState<ThreadMessageLike[] | undefined>(undefined);
+  const [threadKey, setThreadKey] = useState(0);
+  const conversationIdRef = useRef<string | null>(conversationId);
+  const hasRestoredRef = useRef(false);
 
   // Keep ref in sync
   conversationIdRef.current = conversationId;
+
+  // Persist conversation ID
+  const setConversationId = useCallback((id: string | null) => {
+    setConversationIdState(id);
+    try {
+      if (id) localStorage.setItem(STORAGE_KEY, id);
+      else localStorage.removeItem(STORAGE_KEY);
+    } catch { /* ignore */ }
+  }, []);
 
   // ─── Fetch conversation history ──────────────────────────────────
   const fetchHistory = useCallback(() => {
@@ -698,6 +840,17 @@ export default function ChatPage() {
           (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
         );
         setConversations(sorted);
+
+        // Restore active conversation on first load
+        if (!hasRestoredRef.current && conversationIdRef.current) {
+          hasRestoredRef.current = true;
+          const activeConv = sorted.find(c => c.id === conversationIdRef.current);
+          if (activeConv && activeConv.messages?.length > 0) {
+            const threadMsgs = convertToThreadMessages(activeConv.messages);
+            setInitialMessages(threadMsgs);
+            setThreadKey(k => k + 1);
+          }
+        }
       })
       .catch(() => {});
   }, []);
@@ -708,12 +861,17 @@ export default function ChatPage() {
 
   // ─── Chat model adapter ──────────────────────────────────────────
   const adapter = useMemo(
-    () => createChatModelAdapter(conversationIdRef, setConversationId, fetchHistory),
-    [fetchHistory]
+    () => createChatModelAdapter(
+      conversationIdRef,
+      (id) => setConversationId(id),
+      fetchHistory,
+    ),
+    [fetchHistory, setConversationId]
   );
 
   const runtime = useLocalRuntime(adapter, {
     maxSteps: 5,
+    initialMessages,
   });
 
   // ─── Handlers ────────────────────────────────────────────────────
@@ -721,9 +879,9 @@ export default function ChatPage() {
     setConversationId(null);
     conversationIdRef.current = null;
     setSidebarOpen(false);
-    // Reset the thread in the runtime
-    runtime.thread.reset();
-  }, [runtime]);
+    setInitialMessages(undefined);
+    setThreadKey(k => k + 1);
+  }, [setConversationId]);
 
   const handleSelectConversation = useCallback((conv: Conversation) => {
     if (conv.id === conversationIdRef.current) return;
@@ -732,14 +890,11 @@ export default function ChatPage() {
     conversationIdRef.current = conv.id;
     setSidebarOpen(false);
 
-    // Load conversation messages into the runtime
-    const threadMessages = (conv.messages || []).map(m => ({
-      role: m.role as 'user' | 'assistant',
-      content: m.content,
-    }));
-
-    runtime.thread.reset(threadMessages);
-  }, [runtime]);
+    // Convert stored messages to ThreadMessageLike format and reload thread
+    const threadMsgs = convertToThreadMessages(conv.messages || []);
+    setInitialMessages(threadMsgs);
+    setThreadKey(k => k + 1);
+  }, [setConversationId]);
 
   const handleDeleteConversation = useCallback((id: string) => {
     fetch(`/api/chat/history/${id}`, { method: 'DELETE' })
@@ -753,7 +908,7 @@ export default function ChatPage() {
   }, [handleNewChat]);
 
   return (
-    <AssistantRuntimeProvider runtime={runtime}>
+    <AssistantRuntimeProvider key={threadKey} runtime={runtime}>
       <div className="flex h-[calc(100vh-8rem)]">
         {/* Conversation sidebar */}
         <ConversationSidebar
@@ -768,7 +923,7 @@ export default function ChatPage() {
 
         {/* Main chat area */}
         <div className="flex-1 flex flex-col min-w-0">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-800/50">
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setSidebarOpen(o => !o)}
@@ -777,19 +932,20 @@ export default function ChatPage() {
                 <PanelLeftOpen size={18} />
               </button>
               <div>
-                <h1 className="text-2xl font-bold text-gray-100">Chat</h1>
-                <p className="text-sm text-gray-400">Talk to your media stack</p>
+                <h1 className="text-lg font-semibold text-gray-100">Chat</h1>
+                <p className="text-xs text-gray-500">Talk to your media stack</p>
               </div>
             </div>
             <button
               onClick={handleNewChat}
-              className="px-3 py-1.5 text-sm text-gray-400 hover:text-gray-200 border border-slate-700 rounded-lg hover:bg-slate-800 transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-400 hover:text-gray-200 border border-slate-700/50 rounded-lg hover:bg-slate-800 transition-colors"
             >
+              <Plus size={14} />
               New Chat
             </button>
           </div>
 
-          <div className="flex-1 flex flex-col min-h-0 bg-slate-900/50 rounded-xl border border-slate-800 overflow-hidden">
+          <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
             <ChatThread />
           </div>
         </div>

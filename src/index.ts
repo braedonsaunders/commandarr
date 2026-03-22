@@ -144,6 +144,14 @@ async function start() {
     logger.warn('server', 'Integration registry init failed (will retry on first use)', e);
   }
 
+  // Seed prebuilt widgets (core + integration-shipped)
+  try {
+    const { seedPrebuiltWidgets } = await import('./widgets/seed');
+    await seedPrebuiltWidgets();
+  } catch (e) {
+    logger.warn('server', 'Prebuilt widget seeding failed', e);
+  }
+
   // Initialize LLM providers
   try {
     const { initProviders } = await import('./llm/router');

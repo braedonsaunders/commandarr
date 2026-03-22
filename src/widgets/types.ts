@@ -64,6 +64,20 @@ export interface WidgetControl {
   danger?: boolean;
 }
 
+// ─── Prebuilt Widget (shipped by integrations or core) ──────────────
+
+export interface PrebuiltWidget {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  capabilities: WidgetCapability[];
+  controls: WidgetControl[];
+  html: string;
+  css: string;
+  js: string;
+}
+
 // ─── Widget Record ───────────────────────────────────────────────────
 
 export interface WidgetRecord {

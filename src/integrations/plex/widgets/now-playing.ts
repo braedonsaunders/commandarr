@@ -1,4 +1,4 @@
-export const nowPlayingWidget = {
+export const widget = {
   id: 'prebuilt-now-playing',
   slug: 'now-playing',
   name: 'Now Playing',

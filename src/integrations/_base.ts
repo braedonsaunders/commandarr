@@ -78,10 +78,23 @@ export interface ToolDefinition {
   handler: (params: Record<string, any>, ctx: ToolContext) => Promise<ToolResult>;
 }
 
+export interface PrebuiltWidgetDef {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  capabilities: string[];
+  controls: unknown[];
+  html: string;
+  css: string;
+  js: string;
+}
+
 export interface LoadedIntegration {
   id: string;
   manifest: IntegrationManifest;
   tools: ToolDefinition[];
+  widgets: PrebuiltWidgetDef[];
   createClient: (creds: Record<string, string>) => IntegrationClient;
   status: 'configured' | 'unconfigured' | 'healthy' | 'unhealthy';
 }
