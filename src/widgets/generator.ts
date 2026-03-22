@@ -285,6 +285,18 @@ async function buildIntegrationEndpoints(): Promise<string> {
   }
 }
 
+// ─── Field Sanitization ──────────────────────────────────────────────
+
+/**
+ * Fix double-escaped quotes left by LLMs.
+ * Some models produce \\\" in their JSON output which after JSON.parse
+ * leaves literal \" in strings. Strip those leftover backslash-escapes.
+ */
+function unescapeField(value: string): string {
+  // Replace \" with " (leftover JSON escaping)
+  return value.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+}
+
 // ─── JSON Extraction ─────────────────────────────────────────────────
 
 function extractJson(raw: string): unknown {
@@ -390,6 +402,10 @@ export async function generateWidget(prompt: string, name?: string): Promise<{
   try {
     const parsed = extractJson(raw);
     const validated = GeneratedWidgetSchema.parse(parsed);
+    // Fix double-escaped quotes from LLM JSON output (\\\" → \")
+    validated.html = unescapeField(validated.html);
+    validated.css = unescapeField(validated.css);
+    validated.js = unescapeField(validated.js);
     widgetData = validated;
   } catch (jsonError) {
     // Fall back to HTML extraction for backward compatibility
@@ -552,9 +568,9 @@ export async function updateWidget(widgetId: string, prompt: string): Promise<{
   try {
     const parsed = extractJson(raw);
     const validated = GeneratedWidgetSchema.parse(parsed);
-    html = validated.html;
-    css = validated.css;
-    js = validated.js;
+    html = unescapeField(validated.html);
+    css = unescapeField(validated.css);
+    js = unescapeField(validated.js);
     controls = validated.controls;
     capabilities = validated.capabilities;
   } catch {

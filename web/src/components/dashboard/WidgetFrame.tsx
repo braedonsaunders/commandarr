@@ -205,9 +205,14 @@ export function WidgetFrame({
     return () => clearTimeout(timer);
   }, [isReady, onReady]);
 
+  // Fix double-escaped quotes from LLM-generated widgets stored in DB
+  const cleanHtml = html.replace(/\\"/g, '"');
+  const cleanCss = css.replace(/\\"/g, '"');
+  const cleanJs = js.replace(/\\"/g, '"');
+
   // Build the full HTML document
   const bridgeScript = buildBridgeScript(widgetId, capabilities, controls);
-  const fullHtml = buildWidgetDocument(html, css, js, bridgeScript);
+  const fullHtml = buildWidgetDocument(cleanHtml, cleanCss, cleanJs, bridgeScript);
 
   return (
     <div
