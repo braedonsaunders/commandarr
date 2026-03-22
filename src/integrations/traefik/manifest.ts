@@ -18,6 +18,25 @@ export const manifest: IntegrationManifest = {
       helpText:
         'The URL of the Traefik API/dashboard port (default 8080). This is separate from your web entrypoints.',
     },
+    {
+      key: 'configPath',
+      label: 'Config File Path',
+      type: 'text',
+      required: false,
+      placeholder: '/config/traefik/traefik.yml',
+      helpText:
+        'Absolute path to your traefik.yml static config file. In Docker, mount the Traefik config directory ' +
+        'into Commandarr (e.g., -v /path/to/traefik:/config/traefik) and enter the path here.',
+    },
+  ],
+  configFiles: [
+    {
+      key: 'config',
+      credentialKey: 'configPath',
+      format: 'yaml',
+      label: 'Traefik Static Configuration',
+      maxBackups: 10,
+    },
   ],
   healthCheck: {
     endpoint: '/api/version',

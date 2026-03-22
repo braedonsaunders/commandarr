@@ -27,6 +27,25 @@ export const manifest: IntegrationManifest = {
         'API key configured in your cross-seed config. Required if authentication is enabled.',
       docsUrl: 'https://www.cross-seed.org/docs/basics/options#apikey',
     },
+    {
+      key: 'configPath',
+      label: 'Config File Path',
+      type: 'text',
+      required: false,
+      placeholder: '/config/cross-seed/config.js',
+      helpText:
+        'Absolute path to your cross-seed config file (config.js or config.yml). In Docker, mount the config directory ' +
+        'into Commandarr (e.g., -v /path/to/cross-seed:/config/cross-seed) and enter the path here.',
+    },
+  ],
+  configFiles: [
+    {
+      key: 'config',
+      credentialKey: 'configPath',
+      format: 'text',
+      label: 'Cross-seed Configuration',
+      maxBackups: 10,
+    },
   ],
   healthCheck: {
     endpoint: '/api/stats',

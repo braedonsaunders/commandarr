@@ -26,6 +26,25 @@ export const manifest: IntegrationManifest = {
       helpText: 'Found in Autobrr under Settings -> API.',
       docsUrl: 'https://autobrr.com/configuration/autobrr',
     },
+    {
+      key: 'configPath',
+      label: 'Config File Path',
+      type: 'text',
+      required: false,
+      placeholder: '/config/autobrr/config.toml',
+      helpText:
+        'Absolute path to your Autobrr config.toml file. In Docker, mount the Autobrr config directory ' +
+        'into Commandarr (e.g., -v /path/to/autobrr:/config/autobrr) and enter the path here.',
+    },
+  ],
+  configFiles: [
+    {
+      key: 'config',
+      credentialKey: 'configPath',
+      format: 'toml',
+      label: 'Autobrr Configuration',
+      maxBackups: 10,
+    },
   ],
   healthCheck: {
     endpoint: '/api/config',
