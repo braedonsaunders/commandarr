@@ -190,6 +190,17 @@ async function start() {
     }
   }
 
+  // Start Discord bot if configured
+  if (config.discordBotToken) {
+    try {
+      const { DiscordAdapter } = await import('./chat/discord');
+      const discord = new DiscordAdapter();
+      await discord.start();
+    } catch (e) {
+      logger.warn('server', 'Discord bot failed to start', e);
+    }
+  }
+
   // Start the server
   const server = Bun.serve({
     port: config.port,

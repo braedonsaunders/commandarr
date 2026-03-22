@@ -115,6 +115,67 @@ api.post('/integrations/:id/tools/:toolId/test', async (c) => {
   }
 });
 
+// ──────────────────────────── Integration Generation ────────────────
+
+api.post('/integrations/generate', async (c) => {
+  const { prompt } = await c.req.json();
+  if (!prompt || typeof prompt !== 'string') {
+    return c.json({ error: 'prompt is required' }, 400);
+  }
+
+  const { generateIntegration, writeIntegrationToDisk, reloadIntegration } = await import('../integrations/generator');
+
+  try {
+    const integration = await generateIntegration(prompt);
+    await writeIntegrationToDisk(integration);
+    await reloadIntegration(integration.id);
+
+    return c.json({
+      success: true,
+      id: integration.id,
+      summary: integration.summary,
+      toolCount: integration.tools.length,
+      widgetCount: integration.widgets.length,
+    });
+  } catch (e) {
+    logger.error('server', 'Integration generation failed', e);
+    return c.json({ error: e instanceof Error ? e.message : 'Generation failed' }, 500);
+  }
+});
+
+api.post('/integrations/import', async (c) => {
+  const contentType = c.req.header('content-type') || '';
+
+  try {
+    if (contentType.includes('multipart/form-data')) {
+      // ZIP file upload
+      const formData = await c.req.formData();
+      const file = formData.get('file') as File | null;
+      if (!file) return c.json({ error: 'No file uploaded' }, 400);
+
+      const buffer = await file.arrayBuffer();
+      const { importIntegrationFromZip, reloadIntegration } = await import('../integrations/generator');
+      const result = await importIntegrationFromZip(buffer);
+      await reloadIntegration(result.id);
+
+      return c.json({ success: true, id: result.id, fileCount: result.files.length });
+    } else {
+      // JSON body with folder path
+      const { path: folderPath } = await c.req.json();
+      if (!folderPath) return c.json({ error: 'path is required' }, 400);
+
+      const { importIntegrationFromFolder, reloadIntegration } = await import('../integrations/generator');
+      const result = await importIntegrationFromFolder(folderPath);
+      await reloadIntegration(result.id);
+
+      return c.json({ success: true, id: result.id, fileCount: result.files.length });
+    }
+  } catch (e) {
+    logger.error('server', 'Integration import failed', e);
+    return c.json({ error: e instanceof Error ? e.message : 'Import failed' }, 500);
+  }
+});
+
 // ──────────────────────────── Proxy ────────────────────────────
 
 api.all('/proxy/:integrationId/*', async (c) => {

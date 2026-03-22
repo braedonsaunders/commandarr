@@ -12,11 +12,13 @@
     "db:migrate": "drizzle-kit migrate"
   },
   "dependencies": {
-    "hono": "^4.4.0",
+    "croner": "^8.0.0",
+    "discord.js": "^14.25.1",
     "drizzle-orm": "^0.31.0",
     "grammy": "^1.25.0",
-    "croner": "^8.0.0",
+    "hono": "^4.4.0",
     "nanoid": "^5.0.7",
+    "yaml": "^2.8.3",
     "zod": "^3.23.0"
   },
   "devDependencies": {

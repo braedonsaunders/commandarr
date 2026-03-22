@@ -115,7 +115,7 @@ export function App() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.15, ease: 'easeOut' }}
-                className="flex-1 overflow-y-auto p-6"
+                className={`flex-1 overflow-y-auto ${path === '/' || path === '' ? 'p-3' : 'p-6'}`}
               >
                 <PageContent path={path} />
               </motion.main>

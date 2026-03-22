@@ -1,5 +1,5 @@
 type LogLevel = 'debug' | 'info' | 'warn' | 'error';
-type LogSource = 'agent' | 'integration' | 'scheduler' | 'server' | 'chat' | 'webhook' | 'llm' | 'widget';
+type LogSource = 'agent' | 'integration' | 'integration-gen' | 'scheduler' | 'server' | 'chat' | 'webhook' | 'llm' | 'widget';
 
 interface LogEntry {
   timestamp: string;

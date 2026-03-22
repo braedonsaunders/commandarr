@@ -221,14 +221,40 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-4">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-100">Dashboard</h1>
-          <p className="mt-1 text-sm text-gray-400">Your media stack at a glance</p>
-        </div>
-        <div className="flex items-center gap-2">
+    <div className="space-y-2">
+      {/* Page tabs + action buttons */}
+      <div className="flex items-center border-b border-slate-800 pb-1">
+        {pages.length > 0 && (
+          <div className="flex items-center gap-1">
+            {pages.map((page) => (
+              <div key={page.id} className="group flex items-center">
+                <button
+                  onClick={() => setActivePageId(page.id)}
+                  className={cn(
+                    'rounded-t-lg px-4 py-1.5 text-sm font-medium transition-colors',
+                    activePageId === page.id
+                      ? 'bg-slate-800 text-gray-100'
+                      : 'text-gray-500 hover:text-gray-300',
+                  )}
+                >
+                  {page.name}
+                  <span className="ml-1.5 text-xs text-gray-600">
+                    ({(page.items ?? []).length})
+                  </span>
+                </button>
+                {pages.length > 1 && (
+                  <button
+                    onClick={() => handleDeletePage(page.id)}
+                    className="p-1 text-gray-600 opacity-0 hover:text-red-400 group-hover:opacity-100 transition-all"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="ml-auto flex items-center gap-2">
           <Button
             size="sm"
             variant="outline"
@@ -247,38 +273,6 @@ export default function DashboardPage() {
           </Button>
         </div>
       </div>
-
-      {/* Page tabs */}
-      {pages.length > 0 && (
-        <div className="flex items-center gap-1 border-b border-slate-800 pb-1">
-          {pages.map((page) => (
-            <div key={page.id} className="group flex items-center">
-              <button
-                onClick={() => setActivePageId(page.id)}
-                className={cn(
-                  'rounded-t-lg px-4 py-2 text-sm font-medium transition-colors',
-                  activePageId === page.id
-                    ? 'bg-slate-800 text-gray-100'
-                    : 'text-gray-500 hover:text-gray-300',
-                )}
-              >
-                {page.name}
-                <span className="ml-1.5 text-xs text-gray-600">
-                  ({(page.items ?? []).length})
-                </span>
-              </button>
-              {pages.length > 1 && (
-                <button
-                  onClick={() => handleDeletePage(page.id)}
-                  className="p-1 text-gray-600 opacity-0 hover:text-red-400 group-hover:opacity-100 transition-all"
-                >
-                  <Trash2 size={12} />
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* Create page form */}
       <AnimatePresence>

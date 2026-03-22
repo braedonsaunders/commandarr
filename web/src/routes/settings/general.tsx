@@ -92,6 +92,7 @@ export default function GeneralSettingsPage() {
               placeholder="Discord bot token"
               className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:border-amber-500"
             />
+            <p className="text-xs text-gray-500 mt-1">Create a bot at discord.com/developers, enable Message Content Intent, then copy the token</p>
           </div>
         </div>
 

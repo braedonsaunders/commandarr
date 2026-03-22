@@ -1,3 +1,35 @@
+export interface ConfigFileDeclaration {
+  /** Unique key used to reference this file (e.g., 'config', 'collections') */
+  key: string;
+  /** Credential field key that holds the file path (e.g., 'configPath') */
+  credentialKey: string;
+  /** File format for parse/serialize */
+  format: 'yaml' | 'json' | 'toml' | 'text';
+  /** Human-readable label */
+  label: string;
+  /** Max backup count before rotation (default: 10) */
+  maxBackups?: number;
+}
+
+export interface ConfigFileManager {
+  /** Read the raw file content as string */
+  readRaw(): Promise<string>;
+  /** Read and parse the file into a JS object */
+  read(): Promise<unknown>;
+  /** Write a parsed object back to file (serializes to the declared format). Auto-backs up first. */
+  write(data: unknown): Promise<void>;
+  /** Write raw string content. Auto-backs up first. */
+  writeRaw(content: string): Promise<void>;
+  /** Create a timestamped backup. Returns the backup file path. */
+  backup(): Promise<string>;
+  /** List all existing backups for this file */
+  listBackups(): Promise<Array<{ path: string; timestamp: Date; size: number }>>;
+  /** Validate content without writing. Returns null if valid, error string if invalid. */
+  validate(data: unknown): Promise<string | null>;
+  /** The resolved absolute file path */
+  readonly filePath: string;
+}
+
 export interface WakeHook {
   /** Unique event name, e.g. 'health_down', 'webhook_received', 'queue_stalled' */
   event: string;
@@ -30,6 +62,8 @@ export interface IntegrationManifest {
   };
   /** Wake hooks - events that can trigger the LLM agent */
   wakeHooks?: WakeHook[];
+  /** Config files this integration manages (enables read/write/backup/validate via ToolContext) */
+  configFiles?: ConfigFileDeclaration[];
 }
 
 export interface CredentialField {
@@ -51,6 +85,9 @@ export interface ToolResult {
 export interface ToolContext {
   getClient(integrationId: string): IntegrationClient;
   log(message: string): void;
+  /** Get a config file manager for a declared config file.
+   *  The integration must declare configFiles in its manifest and the user must configure the path. */
+  getConfigManager(integrationId: string, fileKey: string): Promise<ConfigFileManager>;
 }
 
 export interface IntegrationClient {
