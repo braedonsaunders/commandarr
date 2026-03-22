@@ -133,5 +133,6 @@ export interface LoadedIntegration {
   tools: ToolDefinition[];
   widgets: PrebuiltWidgetDef[];
   createClient: (creds: Record<string, string>) => IntegrationClient;
-  status: 'configured' | 'unconfigured' | 'healthy' | 'unhealthy';
+  status: 'configured' | 'unconfigured' | 'healthy' | 'unhealthy' | 'disabled';
+  enabled: boolean;
 }

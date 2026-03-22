@@ -70,9 +70,17 @@ export async function initRegistry(): Promise<void> {
       }
 
       const creds = await getCredentials(manifest.id);
-      const status = creds ? 'configured' : 'unconfigured';
+      const enabledFlag = await getEnabledFlag(manifest.id);
+      let status: LoadedIntegration['status'];
+      if (!creds) {
+        status = 'unconfigured';
+      } else if (!enabledFlag) {
+        status = 'disabled';
+      } else {
+        status = 'configured';
+      }
 
-      integrations.set(manifest.id, { id: manifest.id, manifest, tools, widgets: integrationWidgets, createClient, status });
+      integrations.set(manifest.id, { id: manifest.id, manifest, tools, widgets: integrationWidgets, createClient, status, enabled: enabledFlag });
       const widgetCount = integrationWidgets.length;
       logger.info(
         'integration',
@@ -92,8 +100,8 @@ export async function initRegistry(): Promise<void> {
     `Registry initialized: ${integrations.size} integrations, ${toolIndex.size} tools`,
   );
 
-  // Run health checks for all configured integrations
-  const configured = Array.from(integrations.values()).filter(i => i.status !== 'unconfigured');
+  // Run health checks for all configured and enabled integrations
+  const configured = Array.from(integrations.values()).filter(i => i.status !== 'unconfigured' && i.status !== 'disabled');
   if (configured.length > 0) {
     logger.info('integration', `Running startup health checks for ${configured.length} configured integration(s)...`);
     await Promise.allSettled(
@@ -172,6 +180,10 @@ export async function healthCheck(
   const integration = integrations.get(integrationId);
   if (!integration) {
     return { healthy: false, message: `Unknown integration: ${integrationId}` };
+  }
+
+  if (!integration.enabled) {
+    return { healthy: false, message: `${integration.manifest.name} is disabled` };
   }
 
   const creds = await getCredentials(integrationId);
@@ -291,13 +303,62 @@ export async function saveCredentials(
 
   const integration = integrations.get(integrationId);
   if (integration) {
-    integration.status = 'configured';
+    integration.status = integration.enabled ? 'configured' : 'disabled';
   }
 
   logger.info(
     'integration',
     `Credentials saved for ${integrationId}`,
   );
+}
+
+async function getEnabledFlag(integrationId: string): Promise<boolean> {
+  try {
+    const db = await getDb();
+    const row = await db
+      .select({ enabled: schema.integrationCredentials.enabled })
+      .from(schema.integrationCredentials)
+      .where(eq(schema.integrationCredentials.id, integrationId))
+      .get();
+    return row?.enabled !== false;
+  } catch {
+    return true;
+  }
+}
+
+export async function setEnabled(
+  integrationId: string,
+  enabled: boolean,
+): Promise<void> {
+  const integration = integrations.get(integrationId);
+  if (!integration) {
+    throw new Error(`Unknown integration: ${integrationId}`);
+  }
+
+  const db = await getDb();
+  await db
+    .update(schema.integrationCredentials)
+    .set({ enabled, updatedAt: new Date() })
+    .where(eq(schema.integrationCredentials.id, integrationId));
+
+  integration.enabled = enabled;
+
+  if (!enabled) {
+    integration.status = 'disabled';
+  } else {
+    // Re-run health check to get real status
+    const creds = await getCredentials(integrationId);
+    integration.status = creds ? 'configured' : 'unconfigured';
+    if (creds) {
+      try {
+        await healthCheck(integrationId);
+      } catch {
+        // healthCheck updates status internally
+      }
+    }
+  }
+
+  logger.info('integration', `${integration.manifest.name} ${enabled ? 'enabled' : 'disabled'}`);
 }
 
 export function createClient(integrationId: string): IntegrationClient {

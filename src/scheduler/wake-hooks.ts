@@ -63,7 +63,7 @@ export async function initWakeHooks() {
     }
 
     // Set up health monitoring with wake hooks
-    if (integration.status !== 'unconfigured') {
+    if (integration.status !== 'unconfigured' && integration.status !== 'disabled') {
       const interval = manifest.healthCheck.interval || 60;
       const cron = new Cron(`*/${Math.max(1, Math.floor(interval / 60))} * * * *`, async () => {
         await checkHealthAndFire(manifest.id);

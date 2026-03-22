@@ -109,7 +109,7 @@ const builtInTools: ToolDefinition[] = [
     handler: async (_params, _ctx) => {
       const registry = await import('../integrations/registry');
       const integrations = registry.getIntegrations();
-      const configured = integrations.filter((i) => i.status !== 'unconfigured');
+      const configured = integrations.filter((i) => i.status !== 'unconfigured' && i.status !== 'disabled');
 
       if (configured.length === 0) {
         return {
@@ -483,8 +483,8 @@ export async function executeTool(
     let matchedClient: IntegrationClient | null = null;
 
     for (const integration of integrations) {
-      // Allow tools from configured (not just healthy) integrations
-      if (integration.status === 'unconfigured') continue;
+      // Allow tools from configured and enabled (not just healthy) integrations
+      if (integration.status === 'unconfigured' || integration.status === 'disabled') continue;
 
       const tool = integration.tools.find((t) => t.name === toolName);
       if (tool) {

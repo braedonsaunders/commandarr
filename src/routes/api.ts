@@ -37,6 +37,7 @@ api.get('/integrations', async (c) => {
     version: i.manifest.version,
     configured: i.status !== 'unconfigured',
     healthy: i.status === 'healthy',
+    enabled: i.enabled,
     status: i.status,
     toolCount: i.tools.length,
     credentials: i.manifest.credentials,
@@ -60,6 +61,7 @@ api.get('/integrations/:id', async (c) => {
     color: integration.manifest.color,
     configured: integration.status !== 'unconfigured',
     healthy: integration.status === 'healthy',
+    enabled: integration.enabled,
     credentials: integration.manifest.credentials,
     currentCredentials: creds || {},
     tools: tools.map((t) => ({
@@ -78,6 +80,18 @@ api.put('/integrations/:id/creds', async (c) => {
   const { saveCredentials } = await import('../integrations/registry');
   await saveCredentials(id, creds);
   return c.json({ success: true });
+});
+
+api.patch('/integrations/:id/enabled', async (c) => {
+  const id = c.req.param('id');
+  const { enabled } = await c.req.json<{ enabled: boolean }>();
+  const { setEnabled } = await import('../integrations/registry');
+  try {
+    await setEnabled(id, enabled);
+    return c.json({ success: true });
+  } catch (e) {
+    return c.json({ success: false, error: e instanceof Error ? e.message : 'Failed' }, 400);
+  }
 });
 
 api.post('/integrations/:id/test', async (c) => {

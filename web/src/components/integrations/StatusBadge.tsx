@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { cn } from '@/lib/cn';
 
-type Status = 'healthy' | 'unhealthy' | 'unknown' | 'unconfigured';
+type Status = 'healthy' | 'unhealthy' | 'unknown' | 'unconfigured' | 'disabled';
 
 interface StatusBadgeProps {
   status: Status;
@@ -13,6 +13,7 @@ const statusConfig: Record<Status, { dot: string; label: string }> = {
   unhealthy: { dot: 'bg-red-500', label: 'Unhealthy' },
   unknown: { dot: 'bg-gray-500', label: 'Unknown' },
   unconfigured: { dot: 'bg-yellow-500', label: 'Unconfigured' },
+  disabled: { dot: 'bg-gray-500', label: 'Disabled' },
 };
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {

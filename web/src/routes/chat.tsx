@@ -965,13 +965,6 @@ export default function ChatPage() {
                 <p className="text-xs text-gray-500">Talk to your media stack</p>
               </div>
             </div>
-            <button
-              onClick={handleNewChat}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm text-gray-400 hover:text-gray-200 border border-slate-700/50 rounded-lg hover:bg-slate-800 transition-colors"
-            >
-              <Plus size={14} />
-              New Chat
-            </button>
           </div>
 
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">

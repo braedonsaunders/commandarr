@@ -7,7 +7,7 @@ import {
   Tv, Film, Monitor, Plug, Search, X, ChevronDown,
   PlayCircle, HardDrive, Download, DownloadCloud, BarChart2,
   BookOpen, EyeOff, ArrowDownCircle, Flame, Music, Home,
-  Package, Inbox, Plus, Sparkles, Upload, Store, FolderOpen, Loader2,
+  Package, Inbox, Plus, Sparkles, Upload, Store, FolderOpen, Loader2, Power,
 } from 'lucide-react';
 
 const cardContainerVariants = {
@@ -28,11 +28,12 @@ interface Integration {
   color: string;
   configured: boolean;
   healthy: boolean;
+  enabled: boolean;
   status: string;
   toolCount: number;
 }
 
-type StatusFilter = 'all' | 'configured' | 'healthy' | 'unhealthy' | 'unconfigured';
+type StatusFilter = 'all' | 'configured' | 'healthy' | 'unhealthy' | 'unconfigured' | 'disabled';
 type CategoryFilter = 'all' | 'media-servers' | 'media-management' | 'download-clients' | 'indexers-requests' | 'monitoring' | 'smart-home';
 type CreateMode = null | 'prompt' | 'import' | 'marketplace';
 
@@ -94,14 +95,16 @@ const STATUS_LABELS: Record<StatusFilter, string> = {
   healthy: 'Healthy',
   unhealthy: 'Unhealthy',
   unconfigured: 'Not Configured',
+  disabled: 'Disabled',
 };
 
 function getCategory(id: string): CategoryFilter {
   return CATEGORY_MAP[id] || 'monitoring';
 }
 
-function getStatus(i: Integration): 'healthy' | 'unhealthy' | 'unconfigured' {
+function getStatus(i: Integration): 'healthy' | 'unhealthy' | 'unconfigured' | 'disabled' {
   if (!i.configured) return 'unconfigured';
+  if (!i.enabled) return 'disabled';
   return i.healthy ? 'healthy' : 'unhealthy';
 }
 
@@ -488,6 +491,7 @@ export default function IntegrationsPage() {
         if (statusFilter === 'healthy' && status !== 'healthy') return false;
         if (statusFilter === 'unhealthy' && status !== 'unhealthy') return false;
         if (statusFilter === 'unconfigured' && status !== 'unconfigured') return false;
+        if (statusFilter === 'disabled' && status !== 'disabled') return false;
       }
 
       // Category
@@ -747,12 +751,13 @@ export default function IntegrationsPage() {
             const IconComponent = ICON_MAP[integration.icon] || Plug;
             const status = getStatus(integration);
             const category = CATEGORY_LABELS[getCategory(integration.id)];
+            const isDisabled = status === 'disabled';
 
             return (
               <motion.a
                 key={integration.id}
                 href={`/integrations/${integration.id}`}
-                className="block p-5 bg-slate-900 rounded-xl border border-slate-800 hover:border-slate-600 transition-all hover:shadow-lg group"
+                className={`block p-5 bg-slate-900 rounded-xl border border-slate-800 hover:border-slate-600 transition-all hover:shadow-lg group ${isDisabled ? 'opacity-50' : ''}`}
                 variants={cardVariants}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
@@ -768,7 +773,34 @@ export default function IntegrationsPage() {
                       color={integration.color}
                     />
                   </div>
-                  <StatusBadge status={status} />
+                  <div className="flex items-center gap-2">
+                    {integration.configured && (
+                      <button
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          fetch(`/api/integrations/${integration.id}/enabled`, {
+                            method: 'PATCH',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ enabled: !integration.enabled }),
+                          }).then(() => loadIntegrations());
+                        }}
+                        className={`relative w-9 h-5 rounded-full transition-colors ${
+                          integration.enabled
+                            ? 'bg-green-500/80 hover:bg-green-500'
+                            : 'bg-gray-600 hover:bg-gray-500'
+                        }`}
+                        title={integration.enabled ? 'Disable integration' : 'Enable integration'}
+                      >
+                        <span
+                          className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                            integration.enabled ? 'translate-x-4' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    )}
+                    <StatusBadge status={status} />
+                  </div>
                 </div>
                 <h3 className="text-lg font-semibold text-gray-100 group-hover:text-amber-400 transition-colors">
                   {integration.name}
