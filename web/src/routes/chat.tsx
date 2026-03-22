@@ -839,9 +839,17 @@ export default function ChatPage() {
   // Keep ref in sync
   conversationIdRef.current = conversationId;
 
-  // Persist conversation ID
+  // Persist conversation ID and refresh sidebar for new conversations
+  const fetchHistoryRef = useRef<() => void>(() => {});
   const setConversationId = useCallback((id: string | null) => {
-    setConversationIdState(id);
+    setConversationIdState(prev => {
+      // If this is a new conversation (had no ID before), refresh sidebar
+      // with a short delay to let the backend save the record
+      if (id && !prev) {
+        setTimeout(() => fetchHistoryRef.current(), 500);
+      }
+      return id;
+    });
     try {
       if (id) localStorage.setItem(STORAGE_KEY, id);
       else localStorage.removeItem(STORAGE_KEY);
@@ -860,9 +868,16 @@ export default function ChatPage() {
       })
       .catch(() => {});
   }, []);
+  fetchHistoryRef.current = fetchHistory;
 
   useEffect(() => {
     fetchHistory();
+    // Re-fetch when tab/page regains visibility (e.g. navigating back)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') fetchHistory();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [fetchHistory]);
 
   // ─── Chat model adapter ──────────────────────────────────────────
