@@ -83,45 +83,35 @@ async function handleChatMessage(
 
   const conversationId = msg.conversationId || data.conversationId || `web_${nanoid()}`;
 
+  // Helper to send to WebSocket, ignoring errors if client disconnected.
+  // This ensures processMessage() runs to completion (saving to DB) even
+  // if the client navigates away mid-stream.
+  function trySend(data: Record<string, unknown>) {
+    try {
+      ws.send(JSON.stringify(data));
+    } catch {
+      // Client disconnected — ignore, backend will keep processing
+    }
+  }
+
   try {
     const stream = processMessage(msg.message, conversationId, 'web');
 
     for await (const chunk of stream) {
       if (chunk.type === 'text' && chunk.text) {
-        ws.send(JSON.stringify({
-          type: 'text',
-          text: chunk.text,
-          conversationId,
-        }));
+        trySend({ type: 'text', text: chunk.text, conversationId });
       } else if (chunk.type === 'tool_call' && chunk.toolCall) {
-        ws.send(JSON.stringify({
-          type: 'tool_call',
-          toolCall: chunk.toolCall,
-          text: chunk.text,
-          conversationId,
-        }));
+        trySend({ type: 'tool_call', toolCall: chunk.toolCall, text: chunk.text, conversationId });
       } else if (chunk.type === 'done') {
-        ws.send(JSON.stringify({
-          type: 'done',
-          conversationId,
-          usage: chunk.usage,
-        }));
+        trySend({ type: 'done', conversationId, usage: chunk.usage });
       } else if (chunk.type === 'error') {
-        ws.send(JSON.stringify({
-          type: 'error',
-          error: chunk.error,
-          conversationId,
-        }));
+        trySend({ type: 'error', error: chunk.error, conversationId });
       }
     }
 
-    ws.send(JSON.stringify({ type: 'done', conversationId }));
+    trySend({ type: 'done', conversationId });
   } catch (e) {
-    ws.send(JSON.stringify({
-      type: 'error',
-      error: e instanceof Error ? e.message : 'Unknown error',
-      conversationId,
-    }));
+    trySend({ type: 'error', error: e instanceof Error ? e.message : 'Unknown error', conversationId });
   }
 }
 

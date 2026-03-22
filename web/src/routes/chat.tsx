@@ -835,6 +835,7 @@ export default function ChatPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const conversationIdRef = useRef<string | null>(conversationId);
   const hasRestoredRef = useRef(false);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Keep ref in sync
   conversationIdRef.current = conversationId;
@@ -880,6 +881,16 @@ export default function ChatPage() {
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [fetchHistory]);
 
+  // Clean up poll timer on unmount
+  useEffect(() => {
+    return () => {
+      if (pollTimerRef.current) {
+        clearInterval(pollTimerRef.current);
+        pollTimerRef.current = null;
+      }
+    };
+  }, []);
+
   // ─── Chat model adapter ──────────────────────────────────────────
   const adapter = useMemo(
     () => createChatModelAdapter(
@@ -907,6 +918,10 @@ export default function ChatPage() {
 
   // ─── Handlers ────────────────────────────────────────────────────
   const handleNewChat = useCallback(() => {
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
     setConversationId(null);
     conversationIdRef.current = null;
     setSidebarOpen(false);
@@ -915,6 +930,12 @@ export default function ChatPage() {
 
   const handleSelectConversation = useCallback((conv: Conversation) => {
     if (conv.id === conversationIdRef.current) return;
+
+    // Clear any existing poll for a previous conversation
+    if (pollTimerRef.current) {
+      clearInterval(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
 
     setConversationId(conv.id);
     conversationIdRef.current = conv.id;
@@ -927,6 +948,43 @@ export default function ChatPage() {
         const messages = fresh?.messages || conv.messages || [];
         const threadMsgs = convertToThreadMessages(messages);
         runtime.thread.reset(threadMsgs);
+
+        // If the last message is from the user, the assistant response may still
+        // be processing on the backend. Poll until it appears.
+        const lastMsg = messages[messages.length - 1];
+        if (lastMsg && lastMsg.role === 'user') {
+          const targetId = conv.id;
+          let attempts = 0;
+          pollTimerRef.current = setInterval(() => {
+            attempts++;
+            // Stop polling after 60 seconds or if user switched away
+            if (attempts > 30 || conversationIdRef.current !== targetId) {
+              if (pollTimerRef.current) {
+                clearInterval(pollTimerRef.current);
+                pollTimerRef.current = null;
+              }
+              return;
+            }
+            fetch(`/api/chat/history/${targetId}`)
+              .then(r => r.ok ? r.json() : null)
+              .then((updated: Conversation | null) => {
+                if (!updated?.messages?.length) return;
+                const updatedLast = updated.messages[updated.messages.length - 1];
+                if (updatedLast && updatedLast.role === 'assistant') {
+                  // Response arrived - update thread and stop polling
+                  if (conversationIdRef.current === targetId) {
+                    const updatedThreadMsgs = convertToThreadMessages(updated.messages);
+                    runtime.thread.reset(updatedThreadMsgs);
+                  }
+                  if (pollTimerRef.current) {
+                    clearInterval(pollTimerRef.current);
+                    pollTimerRef.current = null;
+                  }
+                }
+              })
+              .catch(() => {});
+          }, 2000);
+        }
       })
       .catch(() => {
         // Fallback to cached data
