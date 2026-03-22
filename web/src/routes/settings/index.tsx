@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Settings, Download, Upload, Save, Check, Brain, Play, Search,
   ChevronDown, X, GripVertical, Plus, Shield, Eye, EyeOff, Bell, Zap,
+  MessageCircle, Send, Hash, Info,
 } from 'lucide-react';
 
 // ─── Types ──────────────────────────────────────────────────────────
@@ -115,20 +116,6 @@ function GeneralTab({ settings, updateSetting }: { settings: Record<string, stri
           <label className="block text-sm text-gray-300 mb-1">Timezone</label>
           <input value={settings.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone} onChange={e => updateSetting('timezone', e.target.value)}
             placeholder="America/New_York" className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:border-amber-500" />
-        </div>
-      </div>
-      <div className="p-6 bg-slate-900 rounded-xl border border-slate-800 space-y-4">
-        <h2 className="text-lg font-semibold text-gray-100">Chat Platforms</h2>
-        <div>
-          <label className="block text-sm text-gray-300 mb-1">Telegram Bot Token</label>
-          <input type="password" value={settings.telegramBotToken || ''} onChange={e => updateSetting('telegramBotToken', e.target.value)}
-            placeholder="123456:ABC-DEF1234..." className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:border-amber-500" />
-          <p className="text-xs text-gray-500 mt-1">Get this from @BotFather on Telegram</p>
-        </div>
-        <div>
-          <label className="block text-sm text-gray-300 mb-1">Discord Bot Token</label>
-          <input type="password" value={settings.discordBotToken || ''} onChange={e => updateSetting('discordBotToken', e.target.value)}
-            placeholder="Discord bot token" className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:border-amber-500" />
         </div>
       </div>
       <div className="p-6 bg-slate-900 rounded-xl border border-slate-800 space-y-4">
@@ -488,10 +475,193 @@ function AgentTab({ settings, updateSetting }: { settings: Record<string, string
   );
 }
 
+// ─── Toggle Component ───────────────────────────────────────────────
+
+function Toggle({ enabled, onChange, disabled }: { enabled: boolean; onChange: (v: boolean) => void; disabled?: boolean }) {
+  return (
+    <button type="button" onClick={() => !disabled && onChange(!enabled)} disabled={disabled}
+      className={`relative w-10 h-5 rounded-full transition-colors shrink-0 ${enabled ? 'bg-amber-500' : 'bg-slate-600'} ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
+      <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${enabled ? 'left-5' : 'left-0.5'}`} />
+    </button>
+  );
+}
+
+function ToggleRow({ label, description, enabled, onChange }: { label: string; description: string; enabled: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex items-center justify-between py-2">
+      <div className="flex-1 min-w-0 mr-4">
+        <div className="text-sm text-gray-200">{label}</div>
+        <div className="text-xs text-gray-500">{description}</div>
+      </div>
+      <Toggle enabled={enabled} onChange={onChange} />
+    </div>
+  );
+}
+
+// ─── Tab: Chat Platforms ────────────────────────────────────────────
+
+function ChatPlatformsTab({ settings, updateSetting }: { settings: Record<string, string>; updateSetting: (k: string, v: string) => void }) {
+  const telegramEnabled = settings.telegramEnabled !== 'false';
+  const discordEnabled = settings.discordEnabled !== 'false';
+
+  // Notification toggles - default to true
+  const getBool = (key: string, def = true) => settings[key] === undefined ? def : settings[key] === 'true';
+
+  return (
+    <div className="space-y-6">
+      {/* ── Telegram ── */}
+      <div className="p-6 bg-slate-900 rounded-xl border border-slate-800 space-y-5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-100 flex items-center gap-2">
+            <Send className="w-5 h-5 text-blue-400" /> Telegram
+          </h2>
+          <Toggle enabled={telegramEnabled} onChange={v => updateSetting('telegramEnabled', String(v))} />
+        </div>
+
+        <div className={telegramEnabled ? '' : 'opacity-40 pointer-events-none'}>
+          {/* Bot Token */}
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm text-gray-300 mb-1">Bot Token</label>
+              <input type="password" value={settings.telegramBotToken || ''} onChange={e => updateSetting('telegramBotToken', e.target.value)}
+                placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11"
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:border-amber-500" />
+              <p className="text-xs text-gray-500 mt-1">
+                Create a bot via <span className="text-amber-400">@BotFather</span> on Telegram. Send <span className="font-mono text-gray-400">/newbot</span>, follow the prompts, and paste the token here.
+              </p>
+            </div>
+
+            {/* Allowed User IDs */}
+            <div>
+              <label className="block text-sm text-gray-300 mb-1">Allowed User IDs</label>
+              <input value={settings.telegramAllowedUsers || ''} onChange={e => updateSetting('telegramAllowedUsers', e.target.value)}
+                placeholder="123456789, 987654321"
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:border-amber-500" />
+              <p className="text-xs text-gray-500 mt-1">
+                Comma-separated Telegram user IDs that can interact with the bot. Leave blank to allow anyone.
+                Send <span className="font-mono text-gray-400">/start</span> to <span className="text-amber-400">@userinfobot</span> to find your ID.
+              </p>
+            </div>
+
+            {/* Notification Chat ID */}
+            <div>
+              <label className="block text-sm text-gray-300 mb-1">Notification Chat ID</label>
+              <input value={settings.telegramNotifyChatId || ''} onChange={e => updateSetting('telegramNotifyChatId', e.target.value)}
+                placeholder="123456789 or -1001234567890"
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:border-amber-500" />
+              <p className="text-xs text-gray-500 mt-1">
+                Chat or group ID where the bot sends alerts and notifications. Can be a user ID (for DMs) or a group ID (starts with <span className="font-mono text-gray-400">-100</span>).
+              </p>
+            </div>
+          </div>
+
+          {/* Telegram Notification Preferences */}
+          <div className="mt-5 pt-4 border-t border-slate-800">
+            <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2">
+              <Bell className="w-4 h-4 text-gray-400" /> Notification Preferences
+            </h3>
+            <div className="space-y-1">
+              <ToggleRow label="Integration Status Changes" description="Alert when integrations go online/offline"
+                enabled={getBool('telegramNotifyIntegrationStatus')} onChange={v => updateSetting('telegramNotifyIntegrationStatus', String(v))} />
+              <ToggleRow label="Automation Results" description="Send results when scheduled automations complete"
+                enabled={getBool('telegramNotifyAutomationResults')} onChange={v => updateSetting('telegramNotifyAutomationResults', String(v))} />
+              <ToggleRow label="New Media Added" description="Notify when new movies, shows, or music are added"
+                enabled={getBool('telegramNotifyNewMedia')} onChange={v => updateSetting('telegramNotifyNewMedia', String(v))} />
+              <ToggleRow label="Request Fulfillment" description="Notify when media requests are completed"
+                enabled={getBool('telegramNotifyRequests')} onChange={v => updateSetting('telegramNotifyRequests', String(v))} />
+              <ToggleRow label="System Warnings" description="Disk space, high CPU, failed health checks, etc."
+                enabled={getBool('telegramNotifySystemWarnings')} onChange={v => updateSetting('telegramNotifySystemWarnings', String(v))} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Discord ── */}
+      <div className="p-6 bg-slate-900 rounded-xl border border-slate-800 space-y-5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold text-gray-100 flex items-center gap-2">
+            <MessageCircle className="w-5 h-5 text-indigo-400" /> Discord
+          </h2>
+          <Toggle enabled={discordEnabled} onChange={v => updateSetting('discordEnabled', String(v))} />
+        </div>
+
+        <div className={discordEnabled ? '' : 'opacity-40 pointer-events-none'}>
+          <div className="space-y-4">
+            {/* Bot Token */}
+            <div>
+              <label className="block text-sm text-gray-300 mb-1">Bot Token</label>
+              <input type="password" value={settings.discordBotToken || ''} onChange={e => updateSetting('discordBotToken', e.target.value)}
+                placeholder="MTIz...your-bot-token"
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:border-amber-500" />
+              <p className="text-xs text-gray-500 mt-1">
+                Create a bot at the <span className="text-amber-400">Discord Developer Portal</span>. Enable the Message Content intent under Bot settings, then copy the token.
+              </p>
+            </div>
+
+            {/* Allowed User IDs */}
+            <div>
+              <label className="block text-sm text-gray-300 mb-1">Allowed User IDs</label>
+              <input value={settings.discordAllowedUsers || ''} onChange={e => updateSetting('discordAllowedUsers', e.target.value)}
+                placeholder="123456789012345678, 987654321098765432"
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:border-amber-500" />
+              <p className="text-xs text-gray-500 mt-1">
+                Comma-separated Discord user IDs. Leave blank to allow anyone who can @mention the bot. Enable Developer Mode in Discord settings, then right-click your profile to copy your ID.
+              </p>
+            </div>
+
+            {/* Notification Channel ID */}
+            <div>
+              <label className="block text-sm text-gray-300 mb-1">Notification Channel ID</label>
+              <input value={settings.discordNotifyChannelId || ''} onChange={e => updateSetting('discordNotifyChannelId', e.target.value)}
+                placeholder="1234567890123456789"
+                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:border-amber-500" />
+              <p className="text-xs text-gray-500 mt-1">
+                Channel ID where the bot sends alerts. Right-click a channel with Developer Mode enabled to copy its ID.
+              </p>
+            </div>
+          </div>
+
+          {/* Discord Notification Preferences */}
+          <div className="mt-5 pt-4 border-t border-slate-800">
+            <h3 className="text-sm font-medium text-gray-300 mb-3 flex items-center gap-2">
+              <Bell className="w-4 h-4 text-gray-400" /> Notification Preferences
+            </h3>
+            <div className="space-y-1">
+              <ToggleRow label="Integration Status Changes" description="Alert when integrations go online/offline"
+                enabled={getBool('discordNotifyIntegrationStatus')} onChange={v => updateSetting('discordNotifyIntegrationStatus', String(v))} />
+              <ToggleRow label="Automation Results" description="Send results when scheduled automations complete"
+                enabled={getBool('discordNotifyAutomationResults')} onChange={v => updateSetting('discordNotifyAutomationResults', String(v))} />
+              <ToggleRow label="New Media Added" description="Notify when new movies, shows, or music are added"
+                enabled={getBool('discordNotifyNewMedia')} onChange={v => updateSetting('discordNotifyNewMedia', String(v))} />
+              <ToggleRow label="Request Fulfillment" description="Notify when media requests are completed"
+                enabled={getBool('discordNotifyRequests')} onChange={v => updateSetting('discordNotifyRequests', String(v))} />
+              <ToggleRow label="System Warnings" description="Disk space, high CPU, failed health checks, etc."
+                enabled={getBool('discordNotifySystemWarnings')} onChange={v => updateSetting('discordNotifySystemWarnings', String(v))} />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Setup Tips ── */}
+      <div className="p-5 bg-slate-800/50 rounded-xl border border-slate-700/50">
+        <h3 className="text-sm font-medium text-gray-300 flex items-center gap-2 mb-3">
+          <Info className="w-4 h-4 text-gray-400" /> Setup Tips
+        </h3>
+        <ul className="space-y-2 text-xs text-gray-400">
+          <li><span className="text-amber-400 font-medium">Telegram:</span> Message your bot after saving to verify it responds. Use a group for shared notifications, or your personal chat for private alerts.</li>
+          <li><span className="text-indigo-400 font-medium">Discord:</span> Make sure the bot has been invited to your server with the <span className="font-mono text-gray-400">Send Messages</span> and <span className="font-mono text-gray-400">Read Message History</span> permissions. Mention the bot or DM it to chat.</li>
+          <li><span className="text-gray-300 font-medium">Restart required:</span> Changes to bot tokens require a container restart to take effect.</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 // ─── Settings Page ──────────────────────────────────────────────────
 
 const TABS = [
   { id: 'general', label: 'General', icon: Settings },
+  { id: 'chat', label: 'Chat Platforms', icon: MessageCircle },
   { id: 'llm', label: 'LLM Providers', icon: Brain },
   { id: 'agent', label: 'Agent', icon: Zap },
   { id: 'auth', label: 'Authentication', icon: Shield },
@@ -540,7 +710,7 @@ export default function SettingsPage() {
                 </motion.span>
               )}
             </AnimatePresence>
-            {(activeTab === 'general' || activeTab === 'auth' || activeTab === 'agent') && (
+            {(activeTab === 'general' || activeTab === 'chat' || activeTab === 'auth' || activeTab === 'agent') && (
               <button onClick={handleSave} disabled={saving}
                 className="flex items-center gap-2 px-5 py-2 bg-amber-500 hover:bg-amber-600 text-black font-medium rounded-lg transition-colors disabled:opacity-50">
                 <Save className="w-4 h-4" /> {saving ? 'Saving...' : 'Save'}
@@ -568,6 +738,7 @@ export default function SettingsPage() {
         <AnimatePresence mode="wait">
           <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
             {activeTab === 'general' && <GeneralTab settings={settings} updateSetting={updateSetting} />}
+            {activeTab === 'chat' && <ChatPlatformsTab settings={settings} updateSetting={updateSetting} />}
             {activeTab === 'llm' && <LLMTab />}
             {activeTab === 'agent' && <AgentTab settings={settings} updateSetting={updateSetting} />}
             {activeTab === 'auth' && <AuthTab settings={settings} updateSetting={updateSetting} />}

@@ -25,6 +25,8 @@ interface IntegrationDetail {
   currentCredentials?: Record<string, string>;
   tools: Tool[];
   webhookPath?: string;
+  webhookDescription?: string;
+  wakeHooks: { event: string; description: string; defaultPrompt: string; enabledByDefault: boolean }[];
 }
 
 export default function IntegrationDetailPage() {
@@ -217,17 +219,42 @@ export default function IntegrationDetailPage() {
         )}
 
         {activeTab === 'webhooks' && (
-          <div className="p-6 bg-slate-900 rounded-xl border border-slate-800">
-            {integration.webhookPath ? (
-              <div>
+          <div className="space-y-4">
+            {integration.webhookPath && (
+              <div className="p-6 bg-slate-900 rounded-xl border border-slate-800">
                 <h3 className="font-medium text-gray-200 mb-2">Webhook URL</h3>
                 <p className="text-sm text-gray-400 mb-3">Configure this URL in your {integration.name} settings to receive events.</p>
                 <code className="block p-3 bg-slate-800 rounded-lg text-amber-400 text-sm break-all">
                   {window.location.origin}{integration.webhookPath}
                 </code>
               </div>
-            ) : (
-              <p className="text-gray-400 text-center">No webhooks configured for this integration</p>
+            )}
+
+            {integration.wakeHooks.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-medium text-gray-200">Automation Hooks</h3>
+                  <span className="text-xs text-gray-500">{integration.wakeHooks.length} hook{integration.wakeHooks.length !== 1 ? 's' : ''}</span>
+                </div>
+                {integration.wakeHooks.map(hook => (
+                  <div key={hook.event} className="p-4 bg-slate-900 rounded-xl border border-slate-800">
+                    <div className="flex items-center gap-2 mb-1">
+                      <span className="font-mono text-sm text-amber-400">{hook.event}</span>
+                      {hook.enabledByDefault && (
+                        <span className="text-xs text-green-400 bg-green-400/10 px-2 py-0.5 rounded">Enabled by default</span>
+                      )}
+                    </div>
+                    <p className="text-sm text-gray-400">{hook.description}</p>
+                    <p className="text-xs text-gray-500 mt-2 italic">"{hook.defaultPrompt}"</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!integration.webhookPath && integration.wakeHooks.length === 0 && (
+              <div className="p-6 bg-slate-900 rounded-xl border border-slate-800">
+                <p className="text-gray-400 text-center">No webhooks configured for this integration</p>
+              </div>
             )}
           </div>
         )}

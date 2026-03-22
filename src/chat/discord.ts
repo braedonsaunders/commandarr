@@ -2,6 +2,9 @@ import { Client, GatewayIntentBits, Events } from 'discord.js';
 import { config } from '../utils/config';
 import { processMessage } from '../agent/core';
 import { logger } from '../utils/logger';
+import { getDb } from '../db';
+import { settings } from '../db/schema';
+import { eq } from 'drizzle-orm';
 import type { ChatAdapter } from './adapter';
 
 /** Maximum Discord message length. */
@@ -39,6 +42,13 @@ export class DiscordAdapter implements ChatAdapter {
       const isDM = !message.guild;
 
       if (!isMentioned && !isDM) return;
+
+      // Check if this user is allowed
+      const authorId = message.author.id;
+      if (!(await isAllowedDiscordUser(authorId))) {
+        logger.info('chat', `Discord message from unauthorized user ${message.author.tag} (${authorId}), ignoring`);
+        return;
+      }
 
       // Strip the bot mention from the message content
       let content = message.content;
@@ -120,6 +130,23 @@ async function sendDiscordResponse(message: any, response: string): Promise<void
     } else {
       await message.channel.send(chunks[i]);
     }
+  }
+}
+
+/**
+ * Check if a Discord user ID is in the allowed list.
+ * Returns true if no allowed list is configured (allow all).
+ */
+async function isAllowedDiscordUser(userId: string): Promise<boolean> {
+  try {
+    const db = await getDb();
+    const row = await db.select().from(settings).where(eq(settings.key, 'discordAllowedUsers'));
+    const allowedStr = row[0]?.value?.trim();
+    if (!allowedStr) return true;
+    const allowed = allowedStr.split(',').map(s => s.trim()).filter(Boolean);
+    return allowed.length === 0 || allowed.includes(userId);
+  } catch {
+    return true;
   }
 }
 

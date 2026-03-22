@@ -2,6 +2,9 @@ import { Bot } from 'grammy';
 import { config } from '../utils/config';
 import { processMessage } from '../agent/core';
 import { logger } from '../utils/logger';
+import { getDb } from '../db';
+import { settings } from '../db/schema';
+import { eq } from 'drizzle-orm';
 import type { ChatAdapter } from './adapter';
 
 /** Maximum Telegram message length. */
@@ -21,7 +24,14 @@ export class TelegramAdapter implements ChatAdapter {
 
     this.bot.on('message:text', async (ctx) => {
       const chatId = ctx.chat.id.toString();
+      const userId = ctx.from?.id?.toString();
       const message = ctx.message.text;
+
+      // Check if this user is allowed
+      if (userId && !(await isAllowedTelegramUser(userId))) {
+        logger.info('chat', `Telegram message from unauthorized user ${userId}, ignoring`);
+        return;
+      }
 
       logger.info('chat', `Telegram message from ${chatId}: ${message.slice(0, 100)}`);
 
@@ -96,6 +106,23 @@ async function sendTelegramResponse(ctx: any, response: string): Promise<void> {
     await ctx.reply(chunk, { parse_mode: 'Markdown' }).catch(() =>
       ctx.reply(chunk),
     );
+  }
+}
+
+/**
+ * Check if a Telegram user ID is in the allowed list.
+ * Returns true if no allowed list is configured (allow all).
+ */
+async function isAllowedTelegramUser(userId: string): Promise<boolean> {
+  try {
+    const db = await getDb();
+    const row = await db.select().from(settings).where(eq(settings.key, 'telegramAllowedUsers'));
+    const allowedStr = row[0]?.value?.trim();
+    if (!allowedStr) return true; // No restriction
+    const allowed = allowedStr.split(',').map(s => s.trim()).filter(Boolean);
+    return allowed.length === 0 || allowed.includes(userId);
+  } catch {
+    return true; // Fail open if DB error
   }
 }
 

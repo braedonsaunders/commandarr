@@ -69,33 +69,6 @@ export default function GeneralSettingsPage() {
           </div>
         </div>
 
-        {/* Chat Platforms */}
-        <div className="p-6 bg-slate-900 rounded-xl border border-slate-800 space-y-4">
-          <h2 className="text-lg font-semibold text-gray-100">Chat Platforms</h2>
-          <div>
-            <label className="block text-sm text-gray-300 mb-1">Telegram Bot Token</label>
-            <input
-              type="password"
-              value={settings.telegramBotToken || ''}
-              onChange={e => updateSetting('telegramBotToken', e.target.value)}
-              placeholder="123456:ABC-DEF1234..."
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:border-amber-500"
-            />
-            <p className="text-xs text-gray-500 mt-1">Get this from @BotFather on Telegram</p>
-          </div>
-          <div>
-            <label className="block text-sm text-gray-300 mb-1">Discord Bot Token</label>
-            <input
-              type="password"
-              value={settings.discordBotToken || ''}
-              onChange={e => updateSetting('discordBotToken', e.target.value)}
-              placeholder="Discord bot token"
-              className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:border-amber-500"
-            />
-            <p className="text-xs text-gray-500 mt-1">Create a bot at discord.com/developers, enable Message Content Intent, then copy the token</p>
-          </div>
-        </div>
-
         {/* Backup */}
         <div className="p-6 bg-slate-900 rounded-xl border border-slate-800 space-y-4">
           <h2 className="text-lg font-semibold text-gray-100">Backup & Restore</h2>

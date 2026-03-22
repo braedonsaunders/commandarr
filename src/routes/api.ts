@@ -71,6 +71,13 @@ api.get('/integrations/:id', async (c) => {
       ui: t.ui,
     })),
     webhookPath: integration.manifest.webhooks?.path,
+    webhookDescription: integration.manifest.webhooks?.description,
+    wakeHooks: (integration.manifest.wakeHooks || []).map((h) => ({
+      event: h.event,
+      description: h.description,
+      defaultPrompt: h.defaultPrompt,
+      enabledByDefault: h.enabledByDefault ?? false,
+    })),
   });
 });
 
