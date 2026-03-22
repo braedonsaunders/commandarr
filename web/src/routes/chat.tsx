@@ -900,7 +900,9 @@ export default function ChatPage() {
     setSidebarOpen(false);
     setInitialMessages(undefined);
     setThreadKey(k => k + 1);
-  }, [setConversationId]);
+    // Reset the thread in the runtime to clear displayed messages
+    try { runtime.thread.reset(); } catch { /* ignore if not ready */ }
+  }, [setConversationId, runtime]);
 
   const handleSelectConversation = useCallback((conv: Conversation) => {
     if (conv.id === conversationIdRef.current) return;
