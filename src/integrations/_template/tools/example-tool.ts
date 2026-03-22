@@ -48,3 +48,29 @@ export const tool: ToolDefinition = {
     };
   },
 };
+
+// ─── Config File Management Example ─────────────────────────────────
+// If your integration declares configFiles in its manifest, tools can
+// read/write/backup config files via ctx.getConfigManager():
+//
+// async handler(params, ctx) {
+//   const manager = await ctx.getConfigManager('my-integration', 'config');
+//
+//   // Read the config
+//   const data = await manager.read();           // parsed object
+//   const raw = await manager.readRaw();         // raw string
+//
+//   // Modify and write (auto-backs up before writing)
+//   data.settings.enabled = true;
+//   await manager.write(data);                   // validates + serializes + writes
+//
+//   // Manual backup
+//   const backupPath = await manager.backup();
+//   const backups = await manager.listBackups();
+//
+//   // Validate without writing
+//   const error = await manager.validate(data);  // null = valid
+//
+//   // File path for display
+//   console.log(manager.filePath);               // resolved absolute path
+// }

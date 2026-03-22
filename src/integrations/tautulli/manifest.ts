@@ -27,7 +27,7 @@ export const manifest: IntegrationManifest = {
     },
   ],
   healthCheck: {
-    endpoint: '/api/v2?cmd=arnold&apikey=',
+    endpoint: 'arnold',
     interval: 60,
     timeout: 5,
   },

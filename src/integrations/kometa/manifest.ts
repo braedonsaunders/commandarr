@@ -1,4 +1,6 @@
 import type { IntegrationManifest } from '../_base';
+import { registerConfigValidator } from '../_config-manager';
+import { kometaConfigValidator } from './config-validator';
 
 export const manifest: IntegrationManifest = {
   id: 'kometa',
@@ -24,6 +26,18 @@ export const manifest: IntegrationManifest = {
       placeholder: 'Optional API key',
       helpText: 'Only required if Kometa API authentication is enabled.',
       docsUrl: 'https://kometa.wiki/en/latest/',
+    },
+    {
+      key: 'configPath',
+      label: 'Config File Path',
+      type: 'text',
+      required: false,
+      placeholder: '/kometa-config/config.yml',
+      helpText:
+        'Absolute path to your Kometa config.yml file. Required for config editing features. ' +
+        'In Docker, mount the Kometa config directory into Commandarr (e.g., ' +
+        '-v /path/to/kometa/config:/kometa-config) and enter the path here.',
+      docsUrl: 'https://kometa.wiki/en/latest/config/overview/',
     },
   ],
   healthCheck: {
@@ -57,4 +71,16 @@ export const manifest: IntegrationManifest = {
       enabledByDefault: true,
     },
   ],
+  configFiles: [
+    {
+      key: 'config',
+      credentialKey: 'configPath',
+      format: 'yaml',
+      label: 'Kometa Config (config.yml)',
+      maxBackups: 15,
+    },
+  ],
 };
+
+// Register the Kometa-specific config validator
+registerConfigValidator('kometa', 'config', kometaConfigValidator);

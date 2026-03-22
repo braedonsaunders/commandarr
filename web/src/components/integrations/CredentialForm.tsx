@@ -51,6 +51,9 @@ export function CredentialForm({
       if (field.value && !initial[field.key]) {
         initial[field.key] = field.value;
       }
+      if (field.type === 'url' && field.placeholder && !initial[field.key]) {
+        initial[field.key] = field.placeholder;
+      }
     }
     setValues(initial);
   }, [fields, initialValues]);

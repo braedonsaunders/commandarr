@@ -220,6 +220,10 @@ const builtInTools: ToolDefinition[] = [
             const toolCtx: ToolContext = {
               getClient() { return client; },
               log(msg) { logger.info('integration', `[stack_summary:${integration.manifest.id}] ${msg}`); },
+              async getConfigManager(integrationId: string, fileKey: string) {
+                const { resolveConfigManager } = await import('../integrations/_config-manager');
+                return resolveConfigManager(integrationId, fileKey);
+              },
             };
 
             const result = await tool.handler({}, toolCtx);
@@ -463,6 +467,7 @@ export async function executeTool(
       const dummyCtx: ToolContext = {
         getClient() { throw new Error('Built-in tools do not have integration clients'); },
         log(msg) { logger.info('agent', `[${toolName}] ${msg}`); },
+        async getConfigManager() { throw new Error('Built-in tools do not support config file management'); },
       };
       const result = await builtIn.handler(params, dummyCtx);
       await logToolExecution(toolName, '_system', params, result, Date.now() - startTime);
@@ -539,6 +544,10 @@ export async function executeTool(
       },
       log(message: string) {
         logger.info('integration', `[${matchedIntegrationId}] ${message}`);
+      },
+      async getConfigManager(integrationId: string, fileKey: string) {
+        const { resolveConfigManager } = await import('../integrations/_config-manager');
+        return resolveConfigManager(integrationId, fileKey);
       },
     };
 

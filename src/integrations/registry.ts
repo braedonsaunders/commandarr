@@ -145,6 +145,10 @@ export async function executeTool(
     log(message: string) {
       logger.info('integration', `[${toolName}] ${message}`);
     },
+    async getConfigManager(integrationId: string, fileKey: string) {
+      const { resolveConfigManager } = await import('./_config-manager');
+      return resolveConfigManager(integrationId, fileKey);
+    },
   };
 
   try {

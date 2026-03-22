@@ -41,4 +41,24 @@ export const manifest: IntegrationManifest = {
     interval: 60,
     timeout: 5,
   },
+
+  // ─── Config File Management (optional) ────────────────────────────
+  // Uncomment to enable config file management for this integration.
+  // Users will configure the file path as a credential, and your tools
+  // can read/write/backup the file via ctx.getConfigManager().
+  //
+  // configFiles: [
+  //   {
+  //     key: 'config',            // unique key to reference this file
+  //     credentialKey: 'configPath', // credential field that holds the file path
+  //     format: 'yaml',           // 'yaml' | 'json' | 'toml' | 'text'
+  //     label: 'Service Config',  // human-readable label
+  //     maxBackups: 10,           // backup rotation limit (default: 10)
+  //   },
+  // ],
+  //
+  // Don't forget to add a matching credential field:
+  //   { key: 'configPath', label: 'Config File Path', type: 'text', required: false,
+  //     placeholder: '/config/config.yml',
+  //     helpText: 'Mount the config directory into Commandarr via Docker.' }
 };
