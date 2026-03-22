@@ -530,7 +530,9 @@ function createChatModelAdapter(
                 : { type: 'complete' as const, reason: 'stop' as const }
               : { type: 'running' as const };
 
-            yield { content: contentParts as unknown as ChatModelRunResult['content'], status };
+            // Deep copy so assistant-ui detects changes (it compares by reference)
+            const snapshot = contentParts.map(p => ({ ...p }));
+            yield { content: snapshot as unknown as ChatModelRunResult['content'], status };
           }
         }
 
