@@ -1,6 +1,7 @@
 import { eq, desc, asc } from 'drizzle-orm';
 import { getDb } from '../db/index';
 import { llmProviders } from '../db/schema';
+import { decrypt } from '../utils/crypto';
 import type { LLMProvider, Message, ToolDef, StreamChunk } from './provider';
 import { OpenAIProvider } from './providers/openai';
 import { OpenRouterProvider } from './providers/openrouter';
@@ -50,13 +51,14 @@ export async function initProviders(): Promise<void> {
 
     const provider = factory();
 
-    // Parse stored config and apply model override
+    // Decrypt and parse stored config
     let config: Record<string, string> = {};
     if (row.config) {
       try {
-        config = JSON.parse(row.config);
+        const decrypted = decrypt(row.config);
+        config = JSON.parse(decrypted);
       } catch {
-        console.warn(`[LLM Router] Invalid config JSON for provider ${row.id}`);
+        console.warn(`[LLM Router] Invalid config for provider ${row.id}`);
         continue;
       }
     }

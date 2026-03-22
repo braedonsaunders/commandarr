@@ -195,7 +195,11 @@ export default function LLMSettingsPage() {
           enabled: true,
         }),
       });
-      loadProviders();
+      // Reload but keep form open with current values
+      const res = await fetch('/api/llm/providers');
+      const data = await res.json();
+      setAvailable(data.available || []);
+      setConfigured(data.configured || []);
       setTestResult(null);
     } catch { alert('Failed to save'); }
     setSaving(false);
@@ -254,10 +258,11 @@ export default function LLMSettingsPage() {
                 return (
                   <motion.div
                     key={p.id}
-                    className="flex items-center gap-3 px-3 py-2.5 bg-slate-800 rounded-lg group"
+                    className="flex items-center gap-3 px-3 py-2.5 bg-slate-800 rounded-lg group cursor-pointer hover:bg-slate-750"
                     initial={{ opacity: 0, x: -10 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: i * 0.05, duration: 0.25 }}
+                    onClick={() => handleSelectProvider(p.providerId)}
                   >
                     <GripVertical className="w-4 h-4 text-gray-600" />
                     <span className="text-sm font-medium text-amber-400 w-5">{i + 1}.</span>
