@@ -87,17 +87,25 @@ export function App() {
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
       const anchor = (e.target as HTMLElement).closest('a');
+      if (e.defaultPrevented || e.button !== 0) return;
+      if (!anchor) return;
+
+      const href = anchor.getAttribute('href');
+      if (!href || href.startsWith('#')) return;
+
+      const url = new URL(anchor.href, window.location.href);
       if (
-        anchor &&
-        anchor.href &&
-        anchor.origin === window.location.origin &&
+        url.origin === window.location.origin &&
+        !url.pathname.startsWith('/api/') &&
         !anchor.hasAttribute('target') &&
         !anchor.hasAttribute('download') &&
+        !e.shiftKey &&
         !e.metaKey &&
-        !e.ctrlKey
+        !e.ctrlKey &&
+        !e.altKey
       ) {
         e.preventDefault();
-        navigate(anchor.pathname);
+        navigate(url.pathname);
       }
     };
     document.addEventListener('click', handleClick);

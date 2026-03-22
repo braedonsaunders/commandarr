@@ -11,27 +11,52 @@ import { existsSync, readdirSync } from 'node:fs';
 
 const app = new Hono();
 
+function isPublicPath(path: string): boolean {
+  return path === '/health' || path.startsWith('/webhooks/') || path === '/debug/static';
+}
+
+function isValidBasicAuth(
+  header: string | undefined | null,
+  username: string,
+  password: string,
+): boolean {
+  if (!header?.startsWith('Basic ')) return false;
+
+  try {
+    const decoded = Buffer.from(header.slice(6), 'base64').toString('utf8');
+    const separatorIndex = decoded.indexOf(':');
+    if (separatorIndex === -1) return false;
+
+    const user = decoded.slice(0, separatorIndex);
+    const pass = decoded.slice(separatorIndex + 1);
+    return user === username && pass === password;
+  } catch {
+    return false;
+  }
+}
+
+function applyUnauthorizedHeaders(headers: Headers): Headers {
+  headers.set('WWW-Authenticate', 'Basic realm="Commandarr"');
+  return headers;
+}
+
 // Middleware
 app.use('*', cors());
 
 // Basic auth — checked per-request from DB settings
 app.use('*', async (c, next) => {
   const path = c.req.path;
-  if (path === '/health' || path.startsWith('/webhooks/') || path === '/debug/static') {
+  if (isPublicPath(path)) {
     return next();
   }
   const { isAuthEnabled } = await import('./utils/config');
   const auth = await isAuthEnabled();
   if (!auth.enabled) return next();
 
-  const header = c.req.header('Authorization');
-  if (!header?.startsWith('Basic ')) {
-    c.header('WWW-Authenticate', 'Basic realm="Commandarr"');
-    return c.text('Unauthorized', 401);
+  if (isValidBasicAuth(c.req.header('Authorization'), auth.username, auth.password)) {
+    return next();
   }
-  const decoded = atob(header.slice(6));
-  const [user, pass] = decoded.split(':');
-  if (user === auth.username && pass === auth.password) return next();
+
   c.header('WWW-Authenticate', 'Basic realm="Commandarr"');
   return c.text('Unauthorized', 401);
 });
@@ -206,9 +231,22 @@ async function start() {
   const server = Bun.serve({
     port: config.port,
     hostname: config.host,
-    fetch(req, server) {
+    async fetch(req, server) {
       const url = new URL(req.url);
       if (url.pathname.startsWith('/ws/')) {
+        const { isAuthEnabled } = await import('./utils/config');
+        const auth = await isAuthEnabled();
+        if (
+          auth.enabled &&
+          !isPublicPath(url.pathname) &&
+          !isValidBasicAuth(req.headers.get('Authorization'), auth.username, auth.password)
+        ) {
+          return new Response('Unauthorized', {
+            status: 401,
+            headers: applyUnauthorizedHeaders(new Headers()),
+          });
+        }
+
         if (handleWSUpgrade(req, server)) {
           return undefined;
         }

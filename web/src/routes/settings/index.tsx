@@ -100,7 +100,26 @@ function ModelSelector({ providerId, currentModel, onSelect }: {
 
 // ─── Tab: General ───────────────────────────────────────────────────
 
-function GeneralTab({ settings, updateSetting }: { settings: Record<string, string>; updateSetting: (k: string, v: string) => void }) {
+function GeneralTab({
+  settings,
+  updateSetting,
+  onImport,
+  importing,
+}: {
+  settings: Record<string, string>;
+  updateSetting: (k: string, v: string) => void;
+  onImport: (file: File) => Promise<void>;
+  importing: boolean;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImportChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    await onImport(file);
+  };
+
   return (
     <div className="space-y-6">
       <div className="p-6 bg-slate-900 rounded-xl border border-slate-800 space-y-4">
@@ -151,12 +170,24 @@ function GeneralTab({ settings, updateSetting }: { settings: Record<string, stri
 
       <div className="p-6 bg-slate-900 rounded-xl border border-slate-800 space-y-4">
         <h2 className="text-lg font-semibold text-gray-100">Backup & Restore</h2>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/json,.json"
+          className="hidden"
+          onChange={handleImportChange}
+        />
         <div className="flex gap-3">
           <a href="/api/settings?export=true" className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-gray-300 rounded-lg border border-slate-700 transition-colors">
             <Download className="w-4 h-4" /> Export Settings
           </a>
-          <button className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-gray-300 rounded-lg border border-slate-700 transition-colors">
-            <Upload className="w-4 h-4" /> Import Settings
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importing}
+            className="flex items-center gap-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-gray-300 rounded-lg border border-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Upload className="w-4 h-4" /> {importing ? 'Importing...' : 'Import Settings'}
           </button>
         </div>
       </div>
@@ -680,7 +711,7 @@ function ChatPlatformsTab({ settings, updateSetting }: { settings: Record<string
         <ul className="space-y-2 text-xs text-gray-400">
           <li><span className="text-amber-400 font-medium">Telegram:</span> Message your bot after saving to verify it responds. Use a group for shared notifications, or your personal chat for private alerts.</li>
           <li><span className="text-indigo-400 font-medium">Discord:</span> Make sure the bot has been invited to your server with the <span className="font-mono text-gray-400">Send Messages</span> and <span className="font-mono text-gray-400">Read Message History</span> permissions. Mention the bot or DM it to chat.</li>
-          <li><span className="text-gray-300 font-medium">Restart required:</span> Changes to bot tokens require a container restart to take effect.</li>
+          <li><span className="text-gray-300 font-medium">Applies on save:</span> Bot token and enable/disable changes are applied automatically when you save settings.</li>
         </ul>
       </div>
     </div>
@@ -704,6 +735,7 @@ export default function SettingsPage() {
   const [settings, setSettings] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
@@ -712,13 +744,48 @@ export default function SettingsPage() {
 
   const updateSetting = (key: string, value: string) => setSettings(prev => ({ ...prev, [key]: value }));
 
+  const showSavedState = () => {
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
       await fetch('/api/settings', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings) });
-      setSaved(true); setTimeout(() => setSaved(false), 2000);
+      showSavedState();
     } catch { alert('Failed to save settings'); }
     setSaving(false);
+  };
+
+  const handleImport = async (file: File) => {
+    setImporting(true);
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text) as Record<string, unknown>;
+      if (!parsed || Array.isArray(parsed)) {
+        throw new Error('Invalid settings file');
+      }
+
+      const nextSettings = Object.fromEntries(
+        Object.entries(parsed)
+          .filter(([key]) => !key.startsWith('push_subscription:'))
+          .map(([key, value]) => [key, value == null ? '' : String(value)]),
+      );
+
+      await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(nextSettings),
+      });
+
+      const refreshed = await fetch('/api/settings').then(r => r.json());
+      setSettings(refreshed);
+      showSavedState();
+    } catch {
+      alert('Failed to import settings');
+    }
+    setImporting(false);
   };
 
   if (loading) return <div className="text-gray-400 py-20 text-center">Loading...</div>;
@@ -767,7 +834,7 @@ export default function SettingsPage() {
         {/* Tab Content */}
         <AnimatePresence mode="wait">
           <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.15 }}>
-            {activeTab === 'general' && <GeneralTab settings={settings} updateSetting={updateSetting} />}
+            {activeTab === 'general' && <GeneralTab settings={settings} updateSetting={updateSetting} onImport={handleImport} importing={importing} />}
             {activeTab === 'chat' && <ChatPlatformsTab settings={settings} updateSetting={updateSetting} />}
             {activeTab === 'llm' && <LLMTab />}
             {activeTab === 'agent' && <AgentTab settings={settings} updateSetting={updateSetting} />}

@@ -1045,8 +1045,21 @@ api.get('/settings', async (c) => {
   const allSettings = await db.select().from(settings);
   const result: Record<string, string> = {};
   for (const s of allSettings) {
+    if (s.key.startsWith('push_subscription:')) continue;
     result[s.key] = s.value || '';
   }
+
+  if (c.req.query('export') === 'true') {
+    const exportedAt = new Date().toISOString().replace(/[:.]/g, '-');
+    return new Response(JSON.stringify(result, null, 2), {
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Content-Disposition': `attachment; filename="commandarr-settings-${exportedAt}.json"`,
+        'Cache-Control': 'no-store',
+      },
+    });
+  }
+
   return c.json(result);
 });
 

@@ -26,28 +26,43 @@ export default function LogsPage() {
   const [autoScroll, setAutoScroll] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimerRef = useRef<number | null>(null);
+  const shouldReconnectRef = useRef(true);
 
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/logs`);
+    shouldReconnectRef.current = true;
 
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === 'history') {
-        setLogs(data.logs);
-      } else if (data.type === 'log') {
-        setLogs(prev => [...prev.slice(-500), data]);
+    const connect = () => {
+      const ws = new WebSocket(`${protocol}//${window.location.host}/ws/logs`);
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === 'history') {
+          setLogs(data.logs);
+        } else if (data.type === 'log') {
+          setLogs(prev => [...prev.slice(-500), data]);
+        }
+      };
+
+      ws.onclose = () => {
+        wsRef.current = null;
+        if (!shouldReconnectRef.current) return;
+        reconnectTimerRef.current = window.setTimeout(connect, 3000);
+      };
+
+      wsRef.current = ws;
+    };
+
+    connect();
+
+    return () => {
+      shouldReconnectRef.current = false;
+      if (reconnectTimerRef.current !== null) {
+        window.clearTimeout(reconnectTimerRef.current);
       }
+      wsRef.current?.close();
     };
-
-    ws.onclose = () => {
-      setTimeout(() => {
-        // Reconnect
-      }, 3000);
-    };
-
-    wsRef.current = ws;
-    return () => { ws.close(); };
   }, []);
 
   useEffect(() => {
