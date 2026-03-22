@@ -77,8 +77,10 @@ A refresh control should always be: { id: "refresh", label: "Refresh", kind: "bu
 
 ### html (max 24KB)
 - Pure HTML markup. No <script> or <style> tags — those go in js/css fields.
-- No <html>, <head>, or <body> tags — the runtime wraps your content.
+- No <html>, <head>, <body>, or <!DOCTYPE> tags — the runtime wraps your content.
 - Use semantic elements: <div>, <span>, <table>, <ul>, etc.
+- Images: both http: and https: URLs are allowed. Data URIs also work.
+- For images from local services (Radarr, Sonarr, Plex, etc), proxy through commandarr.fetch or use direct URLs.
 
 ### css (max 24KB)
 - Pure CSS rules. No <style> tags.
@@ -89,6 +91,10 @@ A refresh control should always be: { id: "refresh", label: "Refresh", kind: "bu
 - Pure JavaScript. No <script> tags.
 - Your code runs after DOMContentLoaded automatically.
 - No ES modules, no import/export, no external dependencies.
+- Use var instead of const/let for maximum compatibility.
+- When building HTML strings, use single quotes for HTML attributes to avoid JSON escaping issues.
+  Example: '<div class=\\'item\\'>' instead of '<div class="item">'
+  Or use template approach: '<div class="item">' is fine in the js field as long as you don't nest it in another string.
 
 ## RUNTIME API — window.commandarr
 
@@ -172,12 +178,18 @@ Base styles are automatically applied, but you should follow these guidelines:
 - Progress bars for queue/download items
 - Truncate long text with ellipsis
 
-## IMPORTANT
+## IMPORTANT RULES — FOLLOW EXACTLY
 - Do NOT use ES modules (import/export) — the JS runs as a plain script
-- Do NOT reference external URLs, CDNs, or images (except data: URIs)
-- Do NOT use arrow functions in top-level scope for maximum compatibility
+- Do NOT reference external CDNs or script libraries
+- Images from local network services (http://) ARE allowed
+- Do NOT use arrow functions — use function() {} everywhere for compatibility
+- Do NOT use const or let — use var for all variable declarations
+- Do NOT include <script>, <style>, <html>, <head>, <body>, or <!DOCTYPE> tags in any field
 - Always call commandarr.ready() after initial setup
-- Always include a "refresh" control for data-fetching widgets`;
+- Always include a "refresh" control for data-fetching widgets
+- When building HTML strings in JS, prefer single quotes for attributes or use string concatenation
+- Handle all errors gracefully with try/catch — never let the widget crash silently
+- Test your logic mentally — make sure loops, conditionals, and string building are correct`;
 }
 
 // ─── Integration Endpoint Discovery ──────────────────────────────────
@@ -288,13 +300,37 @@ async function buildIntegrationEndpoints(): Promise<string> {
 // ─── Field Sanitization ──────────────────────────────────────────────
 
 /**
- * Fix double-escaped quotes left by LLMs.
- * Some models produce \\\" in their JSON output which after JSON.parse
- * leaves literal \" in strings. Strip those leftover backslash-escapes.
+ * Sanitize HTML field from LLM output.
+ * Strips any <script>, <style>, <html>, <head>, <body> tags the LLM may have included
+ * since those are provided by the runtime wrapper.
  */
-function unescapeField(value: string): string {
-  // Replace \" with " (leftover JSON escaping)
-  return value.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+function sanitizeHtml(html: string): string {
+  return html
+    .replace(/<!doctype[^>]*>/gi, '')
+    .replace(/<\/?html[^>]*>/gi, '')
+    .replace(/<\/?head[^>]*>/gi, '')
+    .replace(/<\/?body[^>]*>/gi, '')
+    .replace(/<script[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .trim();
+}
+
+/**
+ * Sanitize CSS field — strip <style> tag wrappers if the LLM included them.
+ */
+function sanitizeCss(css: string): string {
+  return css
+    .replace(/<\/?style[^>]*>/gi, '')
+    .trim();
+}
+
+/**
+ * Sanitize JS field — strip <script> tag wrappers if the LLM included them.
+ */
+function sanitizeJs(js: string): string {
+  return js
+    .replace(/<\/?script[^>]*>/gi, '')
+    .trim();
 }
 
 // ─── JSON Extraction ─────────────────────────────────────────────────
@@ -402,10 +438,9 @@ export async function generateWidget(prompt: string, name?: string): Promise<{
   try {
     const parsed = extractJson(raw);
     const validated = GeneratedWidgetSchema.parse(parsed);
-    // Fix double-escaped quotes from LLM JSON output (\\\" → \")
-    validated.html = unescapeField(validated.html);
-    validated.css = unescapeField(validated.css);
-    validated.js = unescapeField(validated.js);
+    validated.html = sanitizeHtml(validated.html);
+    validated.css = sanitizeCss(validated.css);
+    validated.js = sanitizeJs(validated.js);
     widgetData = validated;
   } catch (jsonError) {
     // Fall back to HTML extraction for backward compatibility
@@ -568,9 +603,9 @@ export async function updateWidget(widgetId: string, prompt: string): Promise<{
   try {
     const parsed = extractJson(raw);
     const validated = GeneratedWidgetSchema.parse(parsed);
-    html = unescapeField(validated.html);
-    css = unescapeField(validated.css);
-    js = unescapeField(validated.js);
+    html = sanitizeHtml(validated.html);
+    css = sanitizeCss(validated.css);
+    js = sanitizeJs(validated.js);
     controls = validated.controls;
     capabilities = validated.capabilities;
   } catch {

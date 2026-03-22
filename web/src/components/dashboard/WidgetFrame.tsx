@@ -205,14 +205,9 @@ export function WidgetFrame({
     return () => clearTimeout(timer);
   }, [isReady, onReady]);
 
-  // Fix double-escaped quotes from LLM-generated widgets stored in DB
-  const cleanHtml = html.replace(/\\"/g, '"');
-  const cleanCss = css.replace(/\\"/g, '"');
-  const cleanJs = js.replace(/\\"/g, '"');
-
   // Build the full HTML document
   const bridgeScript = buildBridgeScript(widgetId, capabilities, controls);
-  const fullHtml = buildWidgetDocument(cleanHtml, cleanCss, cleanJs, bridgeScript);
+  const fullHtml = buildWidgetDocument(html, css, js, bridgeScript);
 
   return (
     <div
@@ -248,13 +243,14 @@ function buildBridgeScript(
   capabilities: string[],
   controls: unknown[],
 ): string {
+  // Serialize with Unicode escapes for < > & to prevent script injection in srcdoc
   const bootstrap = JSON.stringify({
     widgetId,
     capabilities,
     controls,
     refreshInterval: 15000,
     theme: 'dark',
-  });
+  }).replace(/</g, '\\u003c').replace(/>/g, '\\u003e').replace(/&/g, '\\u0026');
 
   const CLOSE_SCRIPT = '<' + '/script>';
 
@@ -368,7 +364,7 @@ function buildWidgetDocument(
     '<head>\n' +
     '<meta charset="utf-8">\n' +
     '<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
-    '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data: https:; style-src \'unsafe-inline\'; script-src \'unsafe-inline\';">\n' +
+    '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; img-src data: http: https:; style-src \'unsafe-inline\'; script-src \'unsafe-inline\';">\n' +
     bridgeScript + '\n' +
     '<style>' + baseStyles + (css ? '\n' + css : '') + '</style>\n' +
     '</head>\n' +
