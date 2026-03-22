@@ -341,15 +341,24 @@ function extractJson(raw: string): unknown {
     return JSON.parse(raw);
   } catch { /* continue */ }
 
-  // Try markdown code fence
-  const fenceMatch = raw.match(/```(?:json)?\s*\n([\s\S]*?)\n```/);
+  // Try markdown code fence (greedy to capture full JSON with nested braces)
+  const fenceMatch = raw.match(/```(?:json)?\s*\n([\s\S]*)\n```/);
   if (fenceMatch) {
+    const content = fenceMatch[1]!.trim();
     try {
-      return JSON.parse(fenceMatch[1]!.trim());
+      return JSON.parse(content);
     } catch { /* continue */ }
+    // The greedy match may have captured too much — try brace matching within it
+    const firstBrace = content.indexOf('{');
+    const lastBrace = content.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace > firstBrace) {
+      try {
+        return JSON.parse(content.substring(firstBrace, lastBrace + 1));
+      } catch { /* continue */ }
+    }
   }
 
-  // Try to find JSON object boundaries
+  // Try to find JSON object boundaries in the raw text
   const firstBrace = raw.indexOf('{');
   const lastBrace = raw.lastIndexOf('}');
   if (firstBrace !== -1 && lastBrace > firstBrace) {

@@ -283,12 +283,12 @@ export const WidgetControlSchema = z.object({
 export const WidgetControlListSchema = z.array(WidgetControlSchema).max(40).default([]);
 
 export const GeneratedWidgetSchema = z.object({
-  name: z.string().min(2).max(80),
-  description: z.string().min(1).max(96),
+  name: z.string().min(1).max(200),
+  description: z.string().min(1).max(500),
   capabilities: z.array(z.enum(['context', 'state', 'integration-control'])).min(1).max(3),
   controls: WidgetControlListSchema,
   html: z.string().min(1).max(24000),
   css: z.string().max(24000).default(''),
-  js: z.string().min(1).max(48000),
-  summary: z.string().min(1).max(320),
+  js: z.string().max(48000).default(''),
+  summary: z.string().max(1000).default(''),
 });
