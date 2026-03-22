@@ -1,5 +1,5 @@
 import type { ToolDefinition } from '../../_base';
-import { config } from '../../../utils/config';
+import { getSetting } from '../../../utils/config';
 import { logger } from '../../../utils/logger';
 
 export const tool: ToolDefinition = {
@@ -60,13 +60,14 @@ export const tool: ToolDefinition = {
     }
 
     // ── Method 2: Commandarr Helper (host-level restart) ────────────
-    const helperUrl = config.helperUrl;
+    const helperUrl = await getSetting('helperUrl');
     if (helperUrl) {
       try {
         ctx.log(`Trying Commandarr Helper at ${helperUrl}...`);
         const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (config.helperToken) {
-          headers['Authorization'] = `Bearer ${config.helperToken}`;
+        const helperToken = await getSetting('helperToken');
+        if (helperToken) {
+          headers['Authorization'] = `Bearer ${helperToken}`;
         }
 
         const res = await fetch(`${helperUrl}/restart-plex`, {
@@ -88,10 +89,11 @@ export const tool: ToolDefinition = {
     }
 
     // ── Method 3: Custom command (legacy) ───────────────────────────
-    if (config.plexRestartCommand) {
+    const plexRestartCommand = await getSetting('plexRestartCommand');
+    if (plexRestartCommand) {
       try {
-        ctx.log(`Running custom command: ${config.plexRestartCommand}`);
-        const proc = Bun.spawn(config.plexRestartCommand.split(' '), {
+        ctx.log(`Running custom command: ${plexRestartCommand}`);
+        const proc = Bun.spawn(plexRestartCommand.split(' '), {
           stdout: 'pipe',
           stderr: 'pipe',
         });

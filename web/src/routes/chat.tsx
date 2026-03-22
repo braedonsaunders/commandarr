@@ -265,7 +265,12 @@ function ConversationSidebar({
                         <p className="text-sm truncate leading-snug">
                           {getPreviewText(conv)}
                         </p>
-                        <p className="text-[10px] text-gray-500 mt-0.5">
+                        <p className="text-[10px] text-gray-500 mt-0.5 flex items-center gap-1.5">
+                          {conv.platform && conv.platform !== 'web' && (
+                            <span className="inline-flex items-center px-1 py-px rounded bg-slate-700/60 text-[9px] font-medium uppercase tracking-wide text-gray-400">
+                              {conv.platform}
+                            </span>
+                          )}
                           {getRelativeTime(conv.updatedAt)}
                         </p>
                       </div>
@@ -847,6 +852,9 @@ export default function ChatPage() {
       // If this is a new conversation (had no ID before), refresh sidebar
       // with a short delay to let the backend save the record
       if (id && !prev) {
+        // Mark as restored so the restore-on-load effect doesn't fire
+        // mid-stream and reset the thread while the adapter is streaming
+        hasRestoredRef.current = true;
         setTimeout(() => fetchHistoryRef.current(), 500);
       }
       return id;

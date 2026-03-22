@@ -1,5 +1,5 @@
 import { Client, GatewayIntentBits, Events } from 'discord.js';
-import { config } from '../utils/config';
+import { getSetting } from '../utils/config';
 import { processMessage } from '../agent/core';
 import { logger } from '../utils/logger';
 import { getDb } from '../db';
@@ -10,12 +10,21 @@ import type { ChatAdapter } from './adapter';
 /** Maximum Discord message length. */
 const MAX_MESSAGE_LENGTH = 2000;
 
+/** Singleton adapter instance used for lifecycle management. */
+let _instance: DiscordAdapter | null = null;
+
 export class DiscordAdapter implements ChatAdapter {
   platform = 'discord' as const;
   private client: Client | null = null;
 
+  constructor() {
+    _instance = this;
+  }
+
   async start(): Promise<void> {
-    if (!config.discordBotToken) {
+    const token = await resolveDiscordToken();
+
+    if (!token) {
       logger.info('chat', 'Discord bot token not configured, skipping');
       return;
     }
@@ -100,7 +109,7 @@ export class DiscordAdapter implements ChatAdapter {
       logger.error('chat', `Discord client error: ${err.message}`, err);
     });
 
-    await this.client.login(config.discordBotToken);
+    await this.client.login(token);
     logger.info('chat', 'Discord bot started');
   }
 
@@ -111,6 +120,29 @@ export class DiscordAdapter implements ChatAdapter {
       logger.info('chat', 'Discord bot stopped');
     }
   }
+}
+
+/**
+ * Restart the Discord bot (e.g. after token change in settings).
+ */
+export async function restartDiscordBot(): Promise<void> {
+  logger.info('chat', 'Restarting Discord bot...');
+  if (_instance) {
+    await _instance.stop();
+    await _instance.start();
+  } else {
+    const adapter = new DiscordAdapter();
+    await adapter.start();
+  }
+}
+
+/**
+ * Resolve the Discord bot token from DB settings.
+ */
+async function resolveDiscordToken(): Promise<string> {
+  const enabled = await getSetting('discordEnabled');
+  if (enabled === 'false') return '';
+  return getSetting('discordBotToken');
 }
 
 /**

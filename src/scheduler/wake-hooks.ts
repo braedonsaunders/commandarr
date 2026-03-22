@@ -175,9 +175,10 @@ export async function fireWakeHook(
     if (notifSetting?.value) {
       const notif = JSON.parse(notifSetting.value) as { platform: string; chatId?: string };
       if (notif.platform === 'telegram' && notif.chatId) {
-        const { config } = await import('../utils/config');
-        if (config.telegramBotToken) {
-          await fetch(`https://api.telegram.org/bot${config.telegramBotToken}/sendMessage`, {
+        const { getSetting } = await import('../utils/config');
+        const token = await getSetting('telegramBotToken');
+        if (token) {
+          await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({

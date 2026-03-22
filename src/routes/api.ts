@@ -1053,6 +1053,7 @@ api.get('/settings', async (c) => {
 api.put('/settings', async (c) => {
   const body = await c.req.json();
   const db = await getDb();
+  const changedKeys = new Set<string>();
   for (const [key, value] of Object.entries(body)) {
     const existing = await db.select().from(settings).where(eq(settings.key, key));
     if (existing.length) {
@@ -1060,7 +1061,29 @@ api.put('/settings', async (c) => {
     } else {
       await db.insert(settings).values({ key, value: String(value) });
     }
+    changedKeys.add(key);
   }
+
+  // Restart Telegram bot if any Telegram-related setting changed
+  if (changedKeys.has('telegramBotToken') || changedKeys.has('telegramEnabled')) {
+    try {
+      const { restartTelegramBot } = await import('../chat/telegram');
+      await restartTelegramBot();
+    } catch (e) {
+      logger.warn('server', 'Failed to restart Telegram bot after settings change', e);
+    }
+  }
+
+  // Restart Discord bot if any Discord-related setting changed
+  if (changedKeys.has('discordBotToken') || changedKeys.has('discordEnabled')) {
+    try {
+      const { restartDiscordBot } = await import('../chat/discord');
+      await restartDiscordBot();
+    } catch (e) {
+      logger.warn('server', 'Failed to restart Discord bot after settings change', e);
+    }
+  }
+
   return c.json({ success: true });
 });
 

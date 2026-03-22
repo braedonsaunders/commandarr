@@ -1,5 +1,5 @@
 import { Bot } from 'grammy';
-import { config } from '../utils/config';
+import { getSetting } from '../utils/config';
 import { processMessage } from '../agent/core';
 import { logger } from '../utils/logger';
 import { getDb } from '../db';
@@ -10,17 +10,36 @@ import type { ChatAdapter } from './adapter';
 /** Maximum Telegram message length. */
 const MAX_MESSAGE_LENGTH = 4096;
 
+/**
+ * Resolve the Telegram bot token from DB settings first, then env var fallback.
+ * Returns empty string if the Telegram integration is explicitly disabled.
+ */
+async function resolveBotToken(): Promise<string> {
+  const enabled = await getSetting('telegramEnabled');
+  if (enabled === 'false') return '';
+  return getSetting('telegramBotToken');
+}
+
+/** Singleton adapter instance used for lifecycle management. */
+let _instance: TelegramAdapter | null = null;
+
 export class TelegramAdapter implements ChatAdapter {
   platform = 'telegram' as const;
   private bot: Bot | null = null;
 
+  constructor() {
+    _instance = this;
+  }
+
   async start(): Promise<void> {
-    if (!config.telegramBotToken) {
+    const token = await resolveBotToken();
+
+    if (!token) {
       logger.info('chat', 'Telegram bot token not configured, skipping');
       return;
     }
 
-    this.bot = new Bot(config.telegramBotToken);
+    this.bot = new Bot(token);
 
     this.bot.on('message:text', async (ctx) => {
       const chatId = ctx.chat.id.toString();
@@ -75,8 +94,30 @@ export class TelegramAdapter implements ChatAdapter {
       logger.error('chat', `Telegram bot error: ${err.message}`, err);
     });
 
-    this.bot.start();
-    logger.info('chat', 'Telegram bot started');
+    // Delete any leftover webhook so long-polling works
+    try {
+      await this.bot.api.deleteWebhook({ drop_pending_updates: false });
+      logger.info('chat', 'Telegram webhook cleared, starting long-polling');
+    } catch (e: any) {
+      logger.warn('chat', `Failed to clear Telegram webhook: ${e.message}`);
+    }
+
+    // Validate token by calling getMe before starting polling
+    try {
+      const me = await this.bot.api.getMe();
+      logger.info('chat', `Telegram bot authenticated as @${me.username} (${me.id})`);
+    } catch (e: any) {
+      logger.error('chat', `Telegram bot token invalid or API unreachable: ${e.message}`);
+      this.bot = null;
+      return;
+    }
+
+    // Start long-polling (fire-and-forget, but log errors)
+    this.bot.start({
+      onStart: () => logger.info('chat', 'Telegram bot polling for updates'),
+    }).catch((err) => {
+      logger.error('chat', `Telegram bot polling crashed: ${err.message}`, err);
+    });
   }
 
   async stop(): Promise<void> {
@@ -85,6 +126,21 @@ export class TelegramAdapter implements ChatAdapter {
       this.bot = null;
       logger.info('chat', 'Telegram bot stopped');
     }
+  }
+}
+
+/**
+ * Restart the Telegram bot (e.g. after token change in settings).
+ * Creates a new adapter if none exists yet.
+ */
+export async function restartTelegramBot(): Promise<void> {
+  logger.info('chat', 'Restarting Telegram bot...');
+  if (_instance) {
+    await _instance.stop();
+    await _instance.start();
+  } else {
+    const adapter = new TelegramAdapter();
+    await adapter.start();
   }
 }
 

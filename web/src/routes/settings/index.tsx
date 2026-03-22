@@ -118,6 +118,37 @@ function GeneralTab({ settings, updateSetting }: { settings: Record<string, stri
             placeholder="America/New_York" className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:border-amber-500" />
         </div>
       </div>
+      {/* ── Commandarr Helper ── */}
+      <div className="p-6 bg-slate-900 rounded-xl border border-slate-800 space-y-4">
+        <h2 className="text-lg font-semibold text-gray-100 flex items-center gap-2">
+          <Settings className="w-5 h-5 text-gray-400" /> Commandarr Helper
+        </h2>
+        <p className="text-xs text-gray-500">
+          The helper runs on the host machine for OS-level actions like restarting Plex. Only needed if Plex runs bare-metal (not Docker).
+        </p>
+        <div>
+          <label className="block text-sm text-gray-300 mb-1">Helper URL</label>
+          <input value={settings.helperUrl || ''} onChange={e => updateSetting('helperUrl', e.target.value)}
+            placeholder="http://host.docker.internal:9484"
+            className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:border-amber-500" />
+        </div>
+        <div>
+          <label className="block text-sm text-gray-300 mb-1">Helper Token</label>
+          <input type="password" value={settings.helperToken || ''} onChange={e => updateSetting('helperToken', e.target.value)}
+            placeholder="Token generated during helper install"
+            className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:border-amber-500" />
+        </div>
+        <div>
+          <label className="block text-sm text-gray-300 mb-1">Plex Restart Command</label>
+          <input value={settings.plexRestartCommand || ''} onChange={e => updateSetting('plexRestartCommand', e.target.value)}
+            placeholder="docker restart plex"
+            className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-lg text-gray-100 placeholder-gray-500 focus:outline-none focus:border-amber-500" />
+          <p className="text-xs text-gray-500 mt-1">
+            Alternative to the helper — a shell command to restart Plex. Only works if Plex is accessible from inside the container.
+          </p>
+        </div>
+      </div>
+
       <div className="p-6 bg-slate-900 rounded-xl border border-slate-800 space-y-4">
         <h2 className="text-lg font-semibold text-gray-100">Backup & Restore</h2>
         <div className="flex gap-3">
@@ -158,7 +189,7 @@ function AuthTab({ settings, updateSetting }: { settings: Record<string, string>
           Webhooks and the health check endpoint are excluded.
         </p>
         <div className={`p-3 rounded-lg text-sm ${authEnabled ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'}`}>
-          {authEnabled ? 'Authentication is enabled. Restart the container for changes to take effect.' : 'Authentication is disabled. Set a username and password below to enable it.'}
+          {authEnabled ? 'Authentication is enabled. Changes take effect immediately.' : 'Authentication is disabled. Set a username and password below to enable it.'}
         </div>
         <div>
           <label className="block text-sm text-gray-300 mb-1">Username</label>
@@ -178,8 +209,7 @@ function AuthTab({ settings, updateSetting }: { settings: Record<string, string>
             </button>
           </div>
           <p className="text-xs text-gray-500 mt-1">
-            Authentication is configured via environment variables (AUTH_USERNAME, AUTH_PASSWORD).
-            Setting values here saves them for reference but you must also set the env vars on the container.
+            Both username and password must be set to enable authentication.
           </p>
         </div>
       </div>

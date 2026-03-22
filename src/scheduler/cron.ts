@@ -156,11 +156,12 @@ async function runAutomation(
 
 async function sendNotification(platform: string, chatId: string, message: string) {
   if (platform === 'telegram') {
-    const { config } = await import('../utils/config');
-    if (!config.telegramBotToken) return;
+    const { getSetting } = await import('../utils/config');
+    const token = await getSetting('telegramBotToken');
+    if (!token) return;
 
     try {
-      await fetch(`https://api.telegram.org/bot${config.telegramBotToken}/sendMessage`, {
+      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -171,7 +172,7 @@ async function sendNotification(platform: string, chatId: string, message: strin
       });
     } catch (e) {
       // Fallback without markdown
-      await fetch(`https://api.telegram.org/bot${config.telegramBotToken}/sendMessage`, {
+      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chat_id: chatId, text: message }),

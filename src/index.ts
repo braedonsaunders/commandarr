@@ -1,6 +1,5 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { basicAuth } from 'hono/basic-auth';
 import { config } from './utils/config';
 import { logger } from './utils/logger';
 import { initDb } from './db/index';
@@ -15,21 +14,27 @@ const app = new Hono();
 // Middleware
 app.use('*', cors());
 
-// Basic auth (if configured)
-if (config.authEnabled) {
-  app.use('*', async (c, next) => {
-    const path = c.req.path;
-    if (path === '/health' || path.startsWith('/webhooks/') || path === '/debug/static') {
-      return next();
-    }
-    const auth = basicAuth({
-      username: config.authUsername,
-      password: config.authPassword,
-    });
-    return auth(c, next);
-  });
-  logger.info('server', 'Basic authentication enabled');
-}
+// Basic auth — checked per-request from DB settings
+app.use('*', async (c, next) => {
+  const path = c.req.path;
+  if (path === '/health' || path.startsWith('/webhooks/') || path === '/debug/static') {
+    return next();
+  }
+  const { isAuthEnabled } = await import('./utils/config');
+  const auth = await isAuthEnabled();
+  if (!auth.enabled) return next();
+
+  const header = c.req.header('Authorization');
+  if (!header?.startsWith('Basic ')) {
+    c.header('WWW-Authenticate', 'Basic realm="Commandarr"');
+    return c.text('Unauthorized', 401);
+  }
+  const decoded = atob(header.slice(6));
+  const [user, pass] = decoded.split(':');
+  if (user === auth.username && pass === auth.password) return next();
+  c.header('WWW-Authenticate', 'Basic realm="Commandarr"');
+  return c.text('Unauthorized', 401);
+});
 
 // API routes
 app.route('/api', api);
@@ -179,26 +184,22 @@ async function start() {
     logger.warn('server', 'Wake hooks init failed', e);
   }
 
-  // Start Telegram bot if configured
-  if (config.telegramBotToken) {
-    try {
-      const { TelegramAdapter } = await import('./chat/telegram');
-      const telegram = new TelegramAdapter();
-      await telegram.start();
-    } catch (e) {
-      logger.warn('server', 'Telegram bot failed to start', e);
-    }
+  // Start Telegram bot (token from DB settings)
+  try {
+    const { TelegramAdapter } = await import('./chat/telegram');
+    const telegram = new TelegramAdapter();
+    await telegram.start();
+  } catch (e) {
+    logger.warn('server', 'Telegram bot failed to start', e);
   }
 
-  // Start Discord bot if configured
-  if (config.discordBotToken) {
-    try {
-      const { DiscordAdapter } = await import('./chat/discord');
-      const discord = new DiscordAdapter();
-      await discord.start();
-    } catch (e) {
-      logger.warn('server', 'Discord bot failed to start', e);
-    }
+  // Start Discord bot (token from DB settings)
+  try {
+    const { DiscordAdapter } = await import('./chat/discord');
+    const discord = new DiscordAdapter();
+    await discord.start();
+  } catch (e) {
+    logger.warn('server', 'Discord bot failed to start', e);
   }
 
   // Start the server
@@ -225,7 +226,6 @@ async function start() {
   ║                                           ║
   ║   Dashboard: http://localhost:${String(server.port).padEnd(5)}      ║
   ║   Host:      ${config.host.padEnd(28)}║
-  ║   Auth:      ${(config.authEnabled ? 'enabled' : 'disabled').padEnd(28)}║
   ║   Frontend:  ${(distDir ? 'found' : 'NOT FOUND').padEnd(28)}║
   ║                                           ║
   ╚═══════════════════════════════════════════╝

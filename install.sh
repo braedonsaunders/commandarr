@@ -139,31 +139,25 @@ if $IS_UPDATE; then
       fi
     fi
 
-    if ask_yn "Reconfigure settings?" "n"; then
-      IS_UPDATE=false  # Fall through to configuration
-    else
-      echo ""
-      echo -e "  ${GREEN}All done!${NC} 🛰️"
-      echo ""
-      exit 0
-    fi
+    echo ""
+    echo -e "  ${GREEN}All done!${NC} 🛰️"
+    echo ""
+    exit 0
   else
     exit 0
   fi
 fi
 
-# ─── Fresh Install / Reconfigure ────────────────────────────────────
+# ─── Fresh Install ───────────────────────────────────────────────────
 
-if ! $IS_UPDATE; then
-  echo ""
-  echo -e "  ${BOLD}Let's set up Commandarr.${NC}"
-  echo ""
+echo ""
+echo -e "  ${BOLD}Let's set up Commandarr.${NC}"
+echo ""
 
-  # Install directory
-  ask "Install directory" "$DEFAULT_DIR" INSTALL_DIR
-  mkdir -p "$INSTALL_DIR"
-  cd "$INSTALL_DIR"
-fi
+# Install directory
+ask "Install directory" "$DEFAULT_DIR" INSTALL_DIR
+mkdir -p "$INSTALL_DIR"
+cd "$INSTALL_DIR"
 
 echo ""
 echo -e "  ${BOLD}── Core Settings ──${NC}"
@@ -172,147 +166,21 @@ echo ""
 ask "Dashboard port" "8484" PORT
 ENCRYPTION_KEY=$(generate_key)
 
-# ─── Authentication ──────────────────────────────────────────────────
+# ─── Plex Helper Setup (optional) ────────────────────────────────────
 
-echo ""
-echo -e "  ${BOLD}── Authentication ──${NC}"
-echo ""
-
-AUTH_USERNAME=""
-AUTH_PASSWORD=""
-if ask_yn "Enable dashboard authentication?" "y"; then
-  ask "Username" "admin" AUTH_USERNAME
-  ask "Password" "" AUTH_PASSWORD
-  while [ -z "$AUTH_PASSWORD" ]; do
-    warn "Password cannot be empty"
-    ask "Password" "" AUTH_PASSWORD
-  done
-  success "Auth enabled: $AUTH_USERNAME / ****"
-else
-  info "No authentication (dashboard is open)"
-fi
-
-# ─── Telegram ────────────────────────────────────────────────────────
-
-echo ""
-echo -e "  ${BOLD}── Telegram Bot (optional) ──${NC}"
-echo ""
-
-TELEGRAM_TOKEN=""
-if ask_yn "Set up Telegram bot?" "n"; then
-  echo -e "  ${DIM}Get a token from @BotFather on Telegram${NC}"
-  ask "Bot token" "" TELEGRAM_TOKEN
-  success "Telegram configured"
-fi
-
-# ─── Plex Setup ──────────────────────────────────────────────────────
-
-echo ""
-echo -e "  ${BOLD}── Plex Restart Capability ──${NC}"
-echo ""
-echo -e "  ${DIM}Commandarr can auto-restart Plex when it crashes.${NC}"
-echo -e "  ${DIM}How you set this up depends on how Plex is installed.${NC}"
-echo ""
-
-HELPER_URL=""
-HELPER_TOKEN=""
-PLEX_RESTART_CMD=""
 DOCKER_SOCK=""
 
-echo -e "  ${BOLD}How is Plex installed?${NC}"
-echo -e "    ${CYAN}1)${NC} Bare metal on this machine (Windows/Linux/macOS service)"
-echo -e "    ${CYAN}2)${NC} Docker container on this machine"
-echo -e "    ${CYAN}3)${NC} Different machine / skip for now"
 echo ""
-echo -en "  ${CYAN}?${NC} Choice ${DIM}(1/2/3)${NC}: "
-read -r PLEX_CHOICE
+echo -e "  ${BOLD}── Plex Restart Capability (optional) ──${NC}"
+echo ""
+echo -e "  ${DIM}Commandarr can auto-restart Plex when it crashes.${NC}"
+echo -e "  ${DIM}If Plex runs in Docker on this machine, we need the Docker socket.${NC}"
+echo ""
 
-case "$PLEX_CHOICE" in
-  1)
-    # Install helper
-    echo ""
-    info "Installing Commandarr Helper for bare-metal Plex restart..."
-
-    HELPER_DIR="$HOME/.commandarr-helper"
-    mkdir -p "$HELPER_DIR"
-    curl -fsSL "https://raw.githubusercontent.com/$REPO/main/helper/commandarr-helper.js" -o "$HELPER_DIR/commandarr-helper.js"
-
-    # Check Node.js
-    if ! command -v node &> /dev/null; then
-      warn "Node.js is required for the helper. Install from https://nodejs.org"
-      warn "After installing Node.js, run: node $HELPER_DIR/commandarr-helper.js"
-    else
-      HELPER_TOKEN=$(generate_key)
-
-      # Write env file
-      cat > "$HELPER_DIR/.env" << EOF
-HELPER_PORT=$HELPER_PORT
-HELPER_TOKEN=$HELPER_TOKEN
-EOF
-
-      # Register as service
-      if [[ "$(uname)" == "Linux" ]] && command -v systemctl &> /dev/null; then
-        sudo tee /etc/systemd/system/commandarr-helper.service > /dev/null << UNIT
-[Unit]
-Description=Commandarr Helper
-After=network.target
-[Service]
-Type=simple
-User=$USER
-WorkingDirectory=$HELPER_DIR
-EnvironmentFile=$HELPER_DIR/.env
-ExecStart=$(which node) $HELPER_DIR/commandarr-helper.js
-Restart=always
-RestartSec=5
-[Install]
-WantedBy=multi-user.target
-UNIT
-        sudo systemctl daemon-reload
-        sudo systemctl enable commandarr-helper
-        sudo systemctl start commandarr-helper
-        success "Helper installed as systemd service"
-
-      elif [[ "$(uname)" == "Darwin" ]]; then
-        PLIST="$HOME/Library/LaunchAgents/com.commandarr.helper.plist"
-        cat > "$PLIST" << PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key><string>com.commandarr.helper</string>
-  <key>ProgramArguments</key><array>
-    <string>$(which node)</string>
-    <string>$HELPER_DIR/commandarr-helper.js</string>
-  </array>
-  <key>EnvironmentVariables</key><dict>
-    <key>HELPER_PORT</key><string>$HELPER_PORT</string>
-    <key>HELPER_TOKEN</key><string>$HELPER_TOKEN</string>
-  </dict>
-  <key>RunAtLoad</key><true/>
-  <key>KeepAlive</key><true/>
-</dict>
-</plist>
-PLIST
-        launchctl load "$PLIST" 2>/dev/null || true
-        success "Helper installed as launchd service"
-      else
-        info "Start the helper manually: HELPER_TOKEN=$HELPER_TOKEN node $HELPER_DIR/commandarr-helper.js"
-      fi
-
-      HELPER_URL="http://host.docker.internal:$HELPER_PORT"
-      success "Helper configured"
-    fi
-    ;;
-  2)
-    ask "Plex container name" "plex" PLEX_CONTAINER
-    PLEX_RESTART_CMD="docker restart $PLEX_CONTAINER"
-    DOCKER_SOCK="      - /var/run/docker.sock:/var/run/docker.sock"
-    success "Docker restart configured for container: $PLEX_CONTAINER"
-    ;;
-  3)
-    info "Skipped — you can configure this later in Settings"
-    ;;
-esac
+if ask_yn "Does Plex run as a Docker container on this machine?" "n"; then
+  DOCKER_SOCK="      - /var/run/docker.sock:/var/run/docker.sock"
+  success "Docker socket will be mounted"
+fi
 
 # ─── Generate docker-compose.yml ─────────────────────────────────────
 
@@ -334,14 +202,6 @@ $DOCKER_SOCK
       - PORT=$PORT
       - ENCRYPTION_KEY=$ENCRYPTION_KEY
 COMPOSE
-
-# Add optional env vars
-[ -n "$AUTH_USERNAME" ]    && echo "      - AUTH_USERNAME=$AUTH_USERNAME" >> "$INSTALL_DIR/docker-compose.yml"
-[ -n "$AUTH_PASSWORD" ]    && echo "      - AUTH_PASSWORD=$AUTH_PASSWORD" >> "$INSTALL_DIR/docker-compose.yml"
-[ -n "$TELEGRAM_TOKEN" ]  && echo "      - TELEGRAM_BOT_TOKEN=$TELEGRAM_TOKEN" >> "$INSTALL_DIR/docker-compose.yml"
-[ -n "$HELPER_URL" ]      && echo "      - HELPER_URL=$HELPER_URL" >> "$INSTALL_DIR/docker-compose.yml"
-[ -n "$HELPER_TOKEN" ]    && echo "      - HELPER_TOKEN=$HELPER_TOKEN" >> "$INSTALL_DIR/docker-compose.yml"
-[ -n "$PLEX_RESTART_CMD" ] && echo "      - PLEX_RESTART_COMMAND=$PLEX_RESTART_CMD" >> "$INSTALL_DIR/docker-compose.yml"
 
 success "docker-compose.yml written"
 
@@ -372,15 +232,17 @@ echo ""
 echo -e "  🛰️  ${BOLD}Commandarr is ready!${NC}"
 echo ""
 echo -e "  ${BOLD}Dashboard:${NC}  http://localhost:$PORT"
-[ -n "$AUTH_USERNAME" ] && echo -e "  ${BOLD}Login:${NC}      $AUTH_USERNAME / ****"
 echo -e "  ${BOLD}Config:${NC}     $INSTALL_DIR/docker-compose.yml"
 echo -e "  ${BOLD}Data:${NC}       $INSTALL_DIR/data/"
 echo ""
 echo -e "  ${DIM}Next steps:${NC}"
-echo -e "    1. Open the dashboard and go to ${BOLD}Settings → LLM Providers${NC}"
-echo -e "    2. Add your API key (OpenRouter, OpenAI, etc.)"
-echo -e "    3. Go to ${BOLD}Integrations${NC} and connect Plex, Radarr, Sonarr"
-echo -e "    4. Start chatting!"
+echo -e "    1. Open the dashboard and go to ${BOLD}Settings${NC}"
+echo -e "    2. Configure authentication, Telegram, Discord, etc."
+echo -e "    3. Add your LLM API key (Settings → LLM Providers)"
+echo -e "    4. Go to ${BOLD}Integrations${NC} and connect Plex, Radarr, Sonarr"
+echo -e "    5. Start chatting!"
+echo ""
+echo -e "  ${DIM}All settings are configured in the dashboard — no env vars needed.${NC}"
 echo ""
 echo -e "  ${DIM}To update later:${NC}  cd $INSTALL_DIR && $0"
 echo -e "  ${DIM}Or just run:${NC}      curl -fsSL https://raw.githubusercontent.com/$REPO/main/install.sh | bash"
