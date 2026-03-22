@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { MessageList } from '../components/chat/MessageList';
 import { ChatInput } from '../components/chat/ChatInput';
@@ -236,13 +236,13 @@ export default function ChatPage() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const fetchHistoryRef = useRef<() => void>(() => {});
 
   // ─── Fetch conversation history ──────────────────────────────────
   const fetchHistory = useCallback(() => {
     fetch('/api/chat/history')
       .then(r => r.json())
       .then((data: Conversation[]) => {
-        // Sort by updatedAt descending
         const sorted = [...data].sort(
           (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
         );
@@ -251,17 +251,15 @@ export default function ChatPage() {
       .catch(() => {});
   }, []);
 
+  fetchHistoryRef.current = fetchHistory;
+
   useEffect(() => {
     fetchHistory();
   }, [fetchHistory]);
 
-  // ─── WebSocket ───────────────────────────────────────────────────
-  const connectWs = useCallback(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const convParam = conversationId ? `?conversationId=${conversationId}` : '';
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/chat${convParam}`);
-
-    ws.onmessage = (event) => {
+  // ─── Shared WS message handler ───────────────────────────────────
+  const createWsHandler = useCallback(() => {
+    return (event: MessageEvent) => {
       const data = JSON.parse(event.data);
 
       if (data.type === 'connected') {
@@ -303,8 +301,7 @@ export default function ChatPage() {
           return '';
         });
         setSending(false);
-        // Refresh history after response completes
-        fetchHistory();
+        fetchHistoryRef.current();
       } else if (data.type === 'error') {
         setMessages(msgs => [...msgs, { role: 'assistant', content: `Error: ${data.error}` }]);
         setStreamText('');
@@ -312,17 +309,28 @@ export default function ChatPage() {
         setSending(false);
       }
     };
+  }, []);
 
+  // ─── Connect WS ──────────────────────────────────────────────────
+  const openWs = useCallback((convId: string | null) => {
+    wsRef.current?.close();
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const convParam = convId ? `?conversationId=${convId}` : '';
+    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/chat${convParam}`);
+    ws.onmessage = createWsHandler();
     ws.onclose = () => {
-      setTimeout(connectWs, 3000);
+      // Only reconnect if this ws is still the active one
+      if (wsRef.current === ws) {
+        setTimeout(() => openWs(convId), 3000);
+      }
     };
-
     wsRef.current = ws;
-  }, [conversationId, fetchHistory]);
+  }, [createWsHandler]);
 
   useEffect(() => {
-    connectWs();
+    openWs(null);
     return () => { wsRef.current?.close(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ─── Handlers ────────────────────────────────────────────────────
@@ -356,76 +364,19 @@ export default function ChatPage() {
     }
   };
 
-  const handleNewChat = () => {
-    // Close existing WS and reconnect without conversationId
-    wsRef.current?.close();
+  const handleNewChat = useCallback(() => {
     setMessages([]);
     setConversationId(null);
     setStreamText('');
     setPendingToolCalls([]);
     setSending(false);
-    // Reconnect WS without conversationId
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/chat`);
-    ws.onmessage = wsRef.current?.onmessage || null;
-    ws.onclose = () => { setTimeout(connectWs, 3000); };
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === 'connected') {
-        setConversationId(data.conversationId);
-      } else if (data.type === 'text') {
-        setStreamText(prev => prev + data.text);
-      } else if (data.type === 'tool_call') {
-        const tc = data.toolCall;
-        let params: Record<string, unknown> = {};
-        let result: string | undefined;
-        try { params = JSON.parse(tc.function?.arguments || '{}'); } catch {}
-        if (data.text) {
-          try {
-            const parsed = JSON.parse(data.text);
-            result = parsed.message || data.text;
-          } catch {
-            result = data.text;
-          }
-        }
-        setPendingToolCalls(prev => [...prev, {
-          name: tc.function?.name || tc.name || 'unknown',
-          parameters: params,
-          result,
-          error: result?.startsWith('Error') || false,
-        }]);
-      } else if (data.type === 'done') {
-        setStreamText(prev => {
-          setPendingToolCalls(prevTC => {
-            const toolCalls = prevTC.length > 0 ? [...prevTC] : undefined;
-            if (prev || toolCalls) {
-              setMessages(msgs => [...msgs, {
-                role: 'assistant',
-                content: prev,
-                toolCalls,
-              }]);
-            }
-            return [];
-          });
-          return '';
-        });
-        setSending(false);
-        fetchHistory();
-      } else if (data.type === 'error') {
-        setMessages(msgs => [...msgs, { role: 'assistant', content: `Error: ${data.error}` }]);
-        setStreamText('');
-        setPendingToolCalls([]);
-        setSending(false);
-      }
-    };
-    wsRef.current = ws;
+    openWs(null);
     setSidebarOpen(false);
-  };
+  }, [openWs]);
 
-  const handleSelectConversation = (conv: Conversation) => {
+  const handleSelectConversation = useCallback((conv: Conversation) => {
     if (conv.id === conversationId) return;
 
-    // Load messages from the conversation
     const loadedMessages: ChatMessage[] = (conv.messages || []).map(m => ({
       role: m.role as 'user' | 'assistant',
       content: m.content,
@@ -436,76 +387,20 @@ export default function ChatPage() {
     setStreamText('');
     setPendingToolCalls([]);
     setSending(false);
-
-    // Reconnect WS with new conversationId
-    wsRef.current?.close();
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${protocol}//${window.location.host}/ws/chat?conversationId=${conv.id}`);
-    ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === 'connected') {
-        setConversationId(data.conversationId);
-      } else if (data.type === 'text') {
-        setStreamText(prev => prev + data.text);
-      } else if (data.type === 'tool_call') {
-        const tc = data.toolCall;
-        let params: Record<string, unknown> = {};
-        let result: string | undefined;
-        try { params = JSON.parse(tc.function?.arguments || '{}'); } catch {}
-        if (data.text) {
-          try {
-            const parsed = JSON.parse(data.text);
-            result = parsed.message || data.text;
-          } catch {
-            result = data.text;
-          }
-        }
-        setPendingToolCalls(prev => [...prev, {
-          name: tc.function?.name || tc.name || 'unknown',
-          parameters: params,
-          result,
-          error: result?.startsWith('Error') || false,
-        }]);
-      } else if (data.type === 'done') {
-        setStreamText(prev => {
-          setPendingToolCalls(prevTC => {
-            const toolCalls = prevTC.length > 0 ? [...prevTC] : undefined;
-            if (prev || toolCalls) {
-              setMessages(msgs => [...msgs, {
-                role: 'assistant',
-                content: prev,
-                toolCalls,
-              }]);
-            }
-            return [];
-          });
-          return '';
-        });
-        setSending(false);
-        fetchHistory();
-      } else if (data.type === 'error') {
-        setMessages(msgs => [...msgs, { role: 'assistant', content: `Error: ${data.error}` }]);
-        setStreamText('');
-        setPendingToolCalls([]);
-        setSending(false);
-      }
-    };
-    ws.onclose = () => { setTimeout(connectWs, 3000); };
-    wsRef.current = ws;
+    openWs(conv.id);
     setSidebarOpen(false);
-  };
+  }, [conversationId, openWs]);
 
-  const handleDeleteConversation = (id: string) => {
+  const handleDeleteConversation = useCallback((id: string) => {
     fetch(`/api/chat/history/${id}`, { method: 'DELETE' })
       .then(() => {
         setConversations(prev => prev.filter(c => c.id !== id));
-        // If we deleted the active conversation, start fresh
         if (id === conversationId) {
           handleNewChat();
         }
       })
       .catch(() => {});
-  };
+  }, [conversationId, handleNewChat]);
 
   return (
     <>

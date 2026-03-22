@@ -72,6 +72,22 @@ export async function initRegistry(): Promise<void> {
     'integration',
     `Registry initialized: ${integrations.size} integrations, ${toolIndex.size} tools`,
   );
+
+  // Run health checks for all configured integrations
+  const configured = Array.from(integrations.values()).filter(i => i.status !== 'unconfigured');
+  if (configured.length > 0) {
+    logger.info('integration', `Running startup health checks for ${configured.length} configured integration(s)...`);
+    await Promise.allSettled(
+      configured.map(async (integration) => {
+        try {
+          const result = await healthCheck(integration.id);
+          logger.info('integration', `${integration.manifest.name}: ${result.healthy ? 'healthy' : 'unhealthy'}`);
+        } catch {
+          logger.warn('integration', `${integration.manifest.name}: health check failed`);
+        }
+      }),
+    );
+  }
 }
 
 export function getIntegrations(): LoadedIntegration[] {

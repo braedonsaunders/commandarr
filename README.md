@@ -40,8 +40,8 @@ The installer will:
 
 ## Features
 
-- **Chat with your media stack** — "What's playing?" / "Add The Bear to Sonarr" / "What's downloading?" via dashboard, Telegram, or Discord
-- **15 built-in tools** — Health checks, restart, search, add media, download queues, calendars, quality profiles across Plex, Radarr, and Sonarr
+- **Chat with your entire media stack** — "What's playing?" / "Add The Bear to Sonarr" / "Approve all pending requests" / "Why are there no subtitles for X?" via dashboard, Telegram, or Discord
+- **60+ built-in tools** — Health checks, restart, search, add media, download queues, subtitle management, request approvals, indexer stats, and more across 11 integrations
 - **AI-generated live widgets** — "Build me a widget showing who's watching Plex" → auto-refreshing dashboard widget with real-time data
 - **Automations** — Cron-scheduled tasks: "Check Plex every 5 minutes, restart if down, notify me on Telegram"
 - **Wake hooks** — Agent auto-activates when services go down or receive webhook events
@@ -53,11 +53,56 @@ The installer will:
 
 ## Supported Integrations
 
+### Media Servers
 | Integration | Tools | Description |
 |-------------|-------|-------------|
 | **Plex** | 5 | Health check, restart, now playing, libraries, search |
+| **Jellyfin** | 6 | Health check, now playing, libraries, search, recently added, users |
+
+### Media Management
+| Integration | Tools | Description |
+|-------------|-------|-------------|
 | **Radarr** | 5 | Search movies, add by TMDB ID, download queue, calendar, quality profiles |
 | **Sonarr** | 5 | Search shows, add by TVDB ID, download queue, calendar, quality profiles |
+| **Lidarr** | 5 | Search artists, add by MusicBrainz ID, download queue, calendar, quality profiles |
+| **Bazarr** | 6 | Wanted movies/episodes, subtitle history, manual search, providers, system status |
+
+### Download Clients
+| Integration | Tools | Description |
+|-------------|-------|-------------|
+| **SABnzbd** | 6 | Queue, history, status, pause/resume, add NZB, speed limit |
+| **qBittorrent** | 5 | Torrents list, transfer status, pause/resume, add torrent, speed limit |
+
+### Indexers & Requests
+| Integration | Tools | Description |
+|-------------|-------|-------------|
+| **Prowlarr** | 5 | Indexer list, indexer stats, cross-indexer search, test indexer, health warnings |
+| **Seerr** | 6 | List/approve/decline requests, search, trending, users (Overseerr/Jellyseerr compatible) |
+
+### Monitoring
+| Integration | Tools | Description |
+|-------------|-------|-------------|
+| **Tautulli** | 6 | Current activity, watch history, recently added, most watched, users, server info |
+
+### Coming Soon
+
+We're building toward full-stack coverage. Planned integrations:
+
+- **Readarr** — Book/audiobook management (same *arr API)
+- **Whisparr** — Adult content management (same *arr API)
+- **Mylar3** — Comic book management
+- **Emby** — Alternative media server
+- **Transmission** — Alternative torrent client
+- **Deluge** — Alternative torrent client
+- **NZBGet** — Alternative Usenet client
+- **Unpackerr** — Automated archive extraction
+- **Recyclarr** — TRaSH Guides sync (quality profile automation)
+- **Notifiarr** — Notification aggregation
+- **Nginx Proxy Manager** — Reverse proxy management
+- **Portainer** — Docker container management
+- **Uptime Kuma** — Service uptime monitoring
+- **Watchtower** — Docker image auto-updates
+- **Homepage** — Dashboard data sync
 
 Community integrations welcome — copy `src/integrations/_template/` and follow the pattern.
 
