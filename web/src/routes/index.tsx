@@ -4,6 +4,7 @@ import { Plus, Layout, Trash2, ChevronDown, Sparkles, Package } from 'lucide-rea
 import { WidgetGrid } from '../components/dashboard/WidgetGrid';
 import type { WidgetPageItem } from '../components/dashboard/WidgetGrid';
 import { Button } from '../components/ui/Button';
+import { cn } from '../lib/cn';
 
 // ─── Types ───────────────────────────────────────────────────────────
 
