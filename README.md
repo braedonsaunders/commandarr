@@ -21,23 +21,14 @@
 
 ---
 
+<p align="center">
+  <img src="screenshots/dashboard.png" alt="Dashboard with live widgets" width="800" /><br/>
+  <em>Dashboard — system status, download queue, now playing, and upcoming releases at a glance</em>
+</p>
+
 ## The Problem
 
 You're running Plex, Sonarr, Radarr, Prowlarr, qBittorrent, Bazarr, Overseerr, and Tautulli. Maybe Lidarr too. Every one of them has its own web UI. Checking what's downloading means opening one tab. Seeing who's streaming means another. Approving a request? Another. Figuring out why something stalled? Good luck — that's three tabs and some detective work.
-
-Commandarr sits on top of all of it. You talk to it like a person:
-
-> "What's currently playing on Plex?"
->
-> "Add The Bear to Sonarr in 1080p"
->
-> "Why is my download queue stuck?"
->
-> "Approve all pending requests in Overseerr"
->
-> "Every morning at 9am, check if anything finished downloading overnight and send me a Telegram summary"
-
-It calls the right APIs, cross-references across services, and gives you the answer. No tab-switching. No memorizing which app does what.
 
 ### What makes Commandarr different
 
@@ -160,23 +151,14 @@ Install Commandarr on your phone's homescreen. Quick-action buttons for the stuf
 
 ---
 
-## Screenshots
+## Supported Integrations
 
-<p align="center">
-  <img src="screenshots/dashboard.png" alt="Dashboard with live widgets" width="800" /><br/>
-  <em>Dashboard — system status, download queue, now playing, and upcoming releases at a glance</em>
-</p>
+37+ integrations with 140+ tools. If it has an API, Commandarr probably talks to it — or it can build the integration for you.
 
 <p align="center">
   <img src="screenshots/integrations.png" alt="Integrations management" width="800" /><br/>
   <em>Integrations — connect your services, see health status, test connections</em>
 </p>
-
----
-
-## Supported Integrations
-
-37+ integrations with 140+ tools. If it has an API, Commandarr probably talks to it — or it can build the integration for you.
 
 ### Media Servers
 | Integration | What It Can Do |
