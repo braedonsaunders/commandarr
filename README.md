@@ -19,6 +19,10 @@
   <a href="https://github.com/braedonsaunders/commandarr/wiki">Docs</a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/braedonsaunders/codeflow"><img src=".github/codeflow-card.svg" alt="Commandarr codebase stats — powered by codeflow" width="100%" /></a>
+</p>
+
 ---
 
 <p align="center">
