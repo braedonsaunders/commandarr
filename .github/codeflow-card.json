@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "runs": [
+    {
+      "at": "2026-04-28T19:18:32.775Z",
+      "sha": "ca57ceffb73da18e5413bdd52281a0c2632af00a",
+      "pr": null,
+      "actor": "braedonsaunders",
+      "files": 452,
+      "functions": 939,
+      "loc": 60068,
+      "languages": 13,
+      "topLanguages": [
+        {
+          "ext": "ts",
+          "pct": 68,
+          "lines": 40821
+        },
+        {
+          "ext": "json",
+          "pct": 14,
+          "lines": 8412
+        },
+        {
+          "ext": "tsx",
+          "pct": 12,
+          "lines": 7339
+        },
+        {
+          "ext": "md",
+          "pct": 2,
+          "lines": 1252
+        },
+        {
+          "ext": "lock",
+          "pct": 2,
+          "lines": 1066
+        }
+      ],
+      "dead": 70,
+      "deadPct": 7.5,
+      "circular": 1,
+      "godObjects": 1,
+      "avgCoupling": 4.1,
+      "securityIssues": 23,
+      "patterns": 7,
+      "duplicates": 34,
+      "layerViolations": 56,
+      "connections": 1872,
+      "avgFnLines": 14.9,
+      "longestFn": 16,
+      "testFiles": 0,
+      "testRatio": 0,
+      "topFolders": [
+        {
+          "name": "src",
+          "count": 391
+        },
+        {
+          "name": "web",
+          "count": 47
+        },
+        {
+          "name": "root",
+          "count": 11
+        },
+        {
+          "name": "helper",
+          "count": 3
+        }
+      ],
+      "folders": 4,
+      "grade": "D",
+      "score": 62,
+      "topBlast": {
+        "path": "web/index.html",
+        "direct": 358,
+        "transitive": 387,
+        "total": 745
+      },
+      "fragility": [
+        {
+          "path": "web/index.html",
+          "direct": 358,
+          "transitive": 387,
+          "total": 745
+        },
+        {
+          "path": "src/integrations/_template/client.ts",
+          "direct": 317,
+          "transitive": 374,
+          "total": 691
+        },
+        {
+          "path": "src/utils/logger.ts",
+          "direct": 283,
+          "transitive": 369,
+          "total": 652
+        }
+      ]
+    }
+  ]
+}
